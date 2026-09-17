@@ -1,32 +1,21 @@
 "use client";
 
-/**
- * NeuralNetwork — the 3D network visible during Stages A, B, D, E, F.
- * Reads scene state from useSceneStore in useFrame (no React re-renders per frame).
- */
-
 import { useRef, useMemo, useEffect } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { nodes, edges, nodeOutEdges, TARGET_NEURON_IDX, TARGET_NEURON_POS } from "@/lib/network";
 import { getSceneState } from "@/components/three/useSceneStore";
 
-// ── Constants ────────────────────────────────────────────────────────────────
-
 const PULSE_COUNT   = 40;
 const MOBILE_PULSES = 20;
-const NODE_RADIUS   = 0.14; // PRE-FIX: was 0.10, +40% per design review
+const NODE_RADIUS   = 0.14;
 
 const CREAM    = new THREE.Color("#ffe6cb");
-const EM_HDR   = new THREE.Color(0.8, 3.2, 1.4);   // HDR → Bloom picks it up
+const EM_HDR   = new THREE.Color(0.8, 3.2, 1.4);
 const EDGE_COL = new THREE.Color(160 / 255, 235 / 255, 205 / 255);
-
-// ── Module-level scratch objects (zero per-frame allocation) ─────────────────
 
 const _obj = new THREE.Object3D();
 const _col = new THREE.Color();
-
-// ── Pulse state ───────────────────────────────────────────────────────────────
 
 interface Pulse { edgeIdx: number; progress: number; speed: number }
 
@@ -34,20 +23,38 @@ function makePulses(count: number): Pulse[] {
   return Array.from({ length: count }, () => ({
     edgeIdx:  Math.floor(Math.random() * edges.length),
     progress: Math.random(),
-    speed:    (0.006 + Math.random() * 0.01) * 60, // per-second
+    speed:    (0.006 + Math.random() * 0.01) * 60,
   }));
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// Continuous alpha function of totalProgress — never resets at stage boundaries.
+// This is the fix for the B→C jolt: the old code reset alpha to 1.0 when entering
+// Stage C (stageProgress=0), causing a jump from B's 0.22 to 1.0.
+function smoothstepFn(lo: number, hi: number, t: number): number {
+  const x = Math.max(0, Math.min(1, (t - lo) / (hi - lo)));
+  return x * x * (3 - 2 * x);
+}
+
+function computeNetworkAlpha(tp: number): number {
+  if (tp <= 0.08) return 1.0;
+  if (tp <= 0.27) return lerp(1.0, 0.22, smoothstepFn(0.08, 0.27, tp));
+  // Crossfade window: fade to 0.15 (not 0) so faint bg visible inside C
+  if (tp <= 0.37) return lerp(0.22, 0.15, smoothstepFn(0.27, 0.37, tp));
+  if (tp <= 0.50) return 0.15;
+  if (tp <= 0.60) return lerp(0.15, 0.85, smoothstepFn(0.50, 0.60, tp));
+  if (tp <= 0.95) return 0.85;
+  return lerp(0.85, 0.38, smoothstepFn(0.95, 1.00, tp));
+}
 
 export default function NeuralNetwork() {
-  const meshRef     = useRef<THREE.InstancedMesh>(null);
-  const nodeMatRef  = useRef<THREE.MeshBasicMaterial>(null);
-  const edgeMatRef  = useRef<THREE.LineBasicMaterial>(null);
-  const pulseMatRef = useRef<THREE.PointsMaterial>(null);
-  const ringRef     = useRef<THREE.Mesh>(null);
-  const ringMatRef  = useRef<THREE.MeshBasicMaterial>(null);
-  const groupRef    = useRef<THREE.Group>(null);
+  const meshRef        = useRef<THREE.InstancedMesh>(null);
+  const nodeMatRef     = useRef<THREE.MeshBasicMaterial>(null);
+  const edgeMatRef     = useRef<THREE.LineBasicMaterial>(null);
+  const pulseMatRef    = useRef<THREE.PointsMaterial>(null);
+  const ringRef        = useRef<THREE.Mesh>(null);
+  const ringMatRef     = useRef<THREE.MeshBasicMaterial>(null);
+  const membraneMatRef = useRef<THREE.MeshBasicMaterial>(null);
+  const groupRef       = useRef<THREE.Group>(null);
 
   const { size } = useThree();
   const isMobile  = size.width < 900;
@@ -84,12 +91,6 @@ export default function NeuralNetwork() {
 
   const mouse = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
 
-  // Capture position of target neuron in group-local coords for the glow ring
-  const targetNodePos = useMemo(
-    () => new THREE.Vector3(...TARGET_NEURON_POS),
-    [],
-  );
-
   useEffect(() => {
     const mesh = meshRef.current;
     if (!mesh) return;
@@ -124,15 +125,13 @@ export default function NeuralNetwork() {
     const { stage, stageProgress: sp, totalProgress } = getSceneState();
     const t = state.clock.elapsedTime;
 
-    // Smooth mouse
     const m = mouse.current;
     m.x += (m.tx - m.x) * 0.04;
     m.y += (m.ty - m.y) * 0.04;
 
-    // ── Stage-dependent group position, rotation, scale, alpha ──────────────
-
-    let targetX: number, targetY: number, alpha: number, scale: number;
-    let rotY: number, rotX: number;
+    // alpha is declared here and set after the switch — never inside cases
+    let targetX = 0, targetY = 0, scale = 1;
+    let rotY = 0, rotX = 0;
 
     const idleRotY = t * 0.12 + m.x * 0.8;
     const idleRotX = -0.25 + m.y * 0.5 + Math.sin(t * 0.2) * 0.08;
@@ -142,95 +141,98 @@ export default function NeuralNetwork() {
         targetX = isMobile ? 0 : 2.3;
         targetY = isMobile ? 0.5 : 0.1;
         scale   = isMobile ? 0.65 : 1.15;
-        alpha   = isMobile ? 0.55 : 1.0;
         rotY    = reducedMotion ? 0 : idleRotY;
         rotX    = reducedMotion ? 0 : idleRotX;
         break;
 
       case "B": {
-        // Centre the network; damp rotation to 0 as B progresses
         targetX = isMobile ? 0 : lerp(2.3, 0, easeOut(sp));
         targetY = isMobile ? 0.2 : lerp(0.1, 0, easeOut(sp));
         scale   = isMobile ? lerp(0.65, 0.55, sp) : lerp(1.15, 1.05, sp);
-        // Keep mostly visible through B; fade slightly toward end
-        alpha   = Math.max(0.25, 1 - sp * 0.75);
-        // Rotation damps: full idle at sp=0, frozen at sp=1
         const damp = 1 - easeOut(sp);
         rotY = idleRotY * damp;
         rotX = idleRotX * damp;
 
-        // Keep target neuron glowing throughout B
         nodeGlow[TARGET_NEURON_IDX] = Math.max(
           nodeGlow[TARGET_NEURON_IDX],
           easeOut(sp) * 0.85 + 0.15,
         );
 
-        // Glow ring around target neuron
-        const ring = ringRef.current;
-        if (ring && ringMatRef.current) {
-          ring.visible = true;
-          const pulse  = 1 + Math.sin(t * 4) * 0.08;
-          ring.scale.setScalar((0.8 + easeOut(sp) * 0.6) * pulse);
-          ringMatRef.current.opacity = easeOut(sp) * 0.6;
-        }
         break;
       }
 
       case "C":
-        // Network fully hidden during interior view
-        targetX = isMobile ? 0 : 0;
-        targetY = 0;
-        scale   = 1.0;
-        alpha   = Math.max(0, 1 - sp * 4); // quick fade-out
+        targetX = 0; targetY = 0; scale = 1.0;
         rotY = 0; rotX = 0;
         break;
 
       case "D":
-        // Pull back — network fades back in centred
-        targetX = 0;
-        targetY = 0;
-        scale   = 1.0;
-        alpha   = Math.min(1, sp * 3);      // quick fade-in
+        targetX = 0; targetY = 0; scale = 1.0;
         rotY = 0; rotX = 0;
         break;
 
       case "E":
-        targetX = 0;
-        targetY = 0;
-        scale   = 1.0;
-        alpha   = 0.85;
+        targetX = 0; targetY = 0; scale = 1.0;
         rotY = 0; rotX = 0;
         break;
 
       case "F":
-      default:
+      default: {
         targetX = isMobile ? 0 : lerp(0, 2.3, easeOut(sp));
         targetY = isMobile ? 0.5 : lerp(0, 0.1, sp);
         scale   = lerp(1.0, isMobile ? 0.55 : 0.9, sp);
-        alpha   = lerp(0.85, 0.38, sp);
-        // Resume gentle idle rotation
         const slowRot = sp * 0.3;
         rotY = idleRotY * slowRot;
         rotX = idleRotX * slowRot;
         break;
+      }
     }
 
-    // Delta-based lerp: snaps immediately at 1fps (headless screenshots),
-    // smooth ~10%/frame at 60fps. min(1, ...) prevents overshoot.
+    // Alpha from totalProgress — continuous across all stage boundaries
+    let alpha = computeNetworkAlpha(totalProgress);
+    if (stage === "A" && isMobile) alpha = 0.55;
+
+    // Membrane veil: back-face sphere — fades in as camera approaches, peaks inside C
+    const memMat = membraneMatRef.current;
+    if (memMat) {
+      const tp = totalProgress;
+      let memOp = 0;
+      if (tp >= 0.22 && tp < 0.37) memOp = smoothstepFn(0.22, 0.37, tp) * 0.22;
+      else if (tp >= 0.37 && tp < 0.50) memOp = 0.22;
+      else if (tp >= 0.50 && tp < 0.60) memOp = 0.22 * (1 - smoothstepFn(0.50, 0.60, tp));
+      memMat.opacity = memOp;
+    }
+
+    // Ring: driven by totalProgress so it never snaps at the B→C stage boundary.
+    // Fades in as camera approaches (tp 0.08→0.35), then smoothsteps out (tp 0.35→0.42).
+    {
+      const ring    = ringRef.current;
+      const ringMat = ringMatRef.current;
+      if (ring && ringMat) {
+        const tp = totalProgress;
+        let ringOp = 0;
+        if (tp >= 0.08 && tp < 0.35) {
+          ringOp = easeOut((tp - 0.08) / 0.27) * 0.6;
+        } else if (tp >= 0.35 && tp < 0.42) {
+          const x = (tp - 0.35) / 0.07;
+          ringOp = (1 - x * x * (3 - 2 * x)) * 0.6;
+        }
+        ring.visible = ringOp > 0.005;
+        if (ring.visible) {
+          const pulse  = 1 + Math.sin(t * 4) * 0.08;
+          const scaleT = tp < 0.35 ? easeOut((tp - 0.08) / 0.27) : 1.0;
+          ring.scale.setScalar((0.8 + scaleT * 0.6) * pulse);
+          ringMat.opacity = ringOp;
+        }
+      }
+    }
+
     const lt = Math.min(1, 6 * delta);
     group.position.x += (targetX - group.position.x) * lt;
     group.position.y += (targetY - group.position.y) * lt;
     group.rotation.y = rotY;
     group.rotation.x = rotX;
     group.scale.setScalar(scale);
-
-    // Hide ring when not in Stage B
-    if (stage !== "B") {
-      const ring = ringRef.current;
-      if (ring) ring.visible = false;
-    }
-
-    // ── Material opacity ───────────────────────────────────────────────────
 
     const nodeMat  = nodeMatRef.current;
     const edgeMat  = edgeMatRef.current;
@@ -239,10 +241,7 @@ export default function NeuralNetwork() {
     if (edgeMat)  edgeMat.opacity  = 0.085 * alpha;
     if (pulseMat) pulseMat.opacity = 0.85 * alpha;
 
-    // Skip animation when network is invisible
-    if (alpha < 0.02 || reducedMotion) return;
-
-    // ── Advance pulses ─────────────────────────────────────────────────────
+    if (alpha < 0.01 || reducedMotion) return;
 
     for (let pi = 0; pi < activePulseCount; pi++) {
       const pulse = pulses[pi];
@@ -274,8 +273,6 @@ export default function NeuralNetwork() {
     }
     (pulseGeo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
 
-    // ── Node glow decay ────────────────────────────────────────────────────
-
     let anyChanged = false;
     for (let ni = 0; ni < nodes.length; ni++) {
       const g = nodeGlow[ni];
@@ -303,7 +300,7 @@ export default function NeuralNetwork() {
       position={[isMobile ? 0 : 2.3, isMobile ? 0.5 : 0.1, 0]}
       rotation={[reducedMotion ? 0 : -0.25, 0, 0]}
     >
-      {/* ── 60 node spheres — one instanced draw call ── */}
+      {/* 60 node spheres — one instanced draw call */}
       <instancedMesh ref={meshRef} args={[undefined, undefined, nodes.length]}>
         <sphereGeometry args={[NODE_RADIUS, 10, 8]} />
         <meshBasicMaterial
@@ -314,7 +311,7 @@ export default function NeuralNetwork() {
         />
       </instancedMesh>
 
-      {/* ── ~250 edges ── */}
+      {/* ~250 edges */}
       <lineSegments geometry={edgeGeo}>
         <lineBasicMaterial
           ref={edgeMatRef}
@@ -325,7 +322,7 @@ export default function NeuralNetwork() {
         />
       </lineSegments>
 
-      {/* ── Signal pulses ── */}
+      {/* Signal pulses */}
       <points geometry={pulseGeo}>
         <pointsMaterial
           ref={pulseMatRef}
@@ -338,13 +335,8 @@ export default function NeuralNetwork() {
         />
       </points>
 
-      {/* ── Target-neuron glow ring (Stage B only) ── */}
-      <mesh
-        ref={ringRef}
-        position={[tnX, tnY, tnZ]}
-        visible={false}
-      >
-        {/* torus: radius=0.26, tube=0.018 — rings the target neuron */}
+      {/* Target-neuron glow ring (Stage B only) */}
+      <mesh ref={ringRef} position={[tnX, tnY, tnZ]} visible={false}>
         <torusGeometry args={[0.26, 0.018, 10, 36]} />
         <meshBasicMaterial
           ref={ringMatRef}
@@ -354,11 +346,24 @@ export default function NeuralNetwork() {
           toneMapped={false}
         />
       </mesh>
+
+      {/* Translucent membrane — back-face only so the camera passes through a soft emerald veil.
+          depthWrite:false prevents z-fighting with interior geometry. */}
+      <mesh position={[tnX, tnY, tnZ]}>
+        <sphereGeometry args={[0.22, 20, 14]} />
+        <meshBasicMaterial
+          ref={membraneMatRef}
+          color={EM_HDR}
+          transparent
+          opacity={0}
+          side={THREE.BackSide}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </mesh>
     </group>
   );
 }
-
-// ── Utilities ─────────────────────────────────────────────────────────────────
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * Math.max(0, Math.min(1, t));

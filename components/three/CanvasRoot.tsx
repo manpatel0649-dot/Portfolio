@@ -54,7 +54,7 @@ export default function CanvasRoot() {
           powerPreference: "high-performance",
         }}
         // CameraRig overrides this position each frame; these are the defaults
-        camera={{ position: [0, 0, 8], fov: 45, near: 0.1, far: 100 }}
+        camera={{ position: [0, 0, 8], fov: 45, near: 0.05, far: 100 }}
         style={{ background: "transparent" }}
       >
         <Suspense fallback={null}>

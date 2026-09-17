@@ -96,14 +96,26 @@ export default function NeuronInterior() {
   const opRef = useRef(0);
 
   useFrame((state, delta) => {
-    const { stage, stageProgress } = getSceneState();
+    const { stage, stageProgress, totalProgress: tp } = getSceneState();
     const g = groupRef.current;
     if (!g) return;
 
-    // Fade in fast at C start; fade out fast at D start
+    // Crossfade using totalProgress — starts before stage C so there's no pop at tp=0.35.
+    // Overlap window with network: interior 0.30→1.0, network 1.0→0.15, both smooth.
     let target = 0;
-    if (stage === "C") target = Math.min(1, stageProgress * 5);
-    if (stage === "D") target = Math.max(0, 1 - stageProgress * 5);
+    if (tp >= 0.30 && tp < 0.37) {
+      // Smoothstep fade-in during B's last stretch into C
+      const x = (tp - 0.30) / 0.07;
+      target = x * x * (3 - 2 * x);
+    } else if (tp >= 0.37 && tp < 0.50) {
+      target = 1.0;
+    } else if (tp >= 0.50 && tp < 0.57) {
+      // Smoothstep fade-out into D
+      const x = (tp - 0.50) / 0.07;
+      target = 1.0 - x * x * (3 - 2 * x);
+    }
+    // stageProgress and stage are still used below for logic gating
+    void stage; void stageProgress;
 
     opRef.current += (target - opRef.current) * 0.12;
     const op = opRef.current;

@@ -18,8 +18,8 @@ export default function Effects({ isMobile }: EffectsProps) {
       <Bloom
         luminanceThreshold={0.65}  // cream ≈ 0.90 luminance → just above threshold
         luminanceSmoothing={0.85}
-        intensity={isMobile ? 0.65 : 1.1}
-        mipmapBlur               // softer, more natural glow (recommended for v9)
+        intensity={isMobile ? 0.55 : 0.9}   // capped lower to prevent white flash at membrane
+        mipmapBlur                            // softer, more natural glow
       />
     </EffectComposer>
   );

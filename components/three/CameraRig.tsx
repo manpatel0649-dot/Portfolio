@@ -69,8 +69,8 @@ export default function CameraRig() {
 
     switch (stage) {
       case "B": {
-        // Sample curve directly — scrub:1 already smooths sp, so no extra lerp
-        const t = easeInOut(sp);
+        // easeOutCubic: camera decelerates as it approaches the membrane (no linear rush)
+        const t = easeOutCubic(sp);
         desiredPos  = diveCurve.getPoint(t);
         desiredLook = NEURON_POS;
         break;
@@ -119,7 +119,7 @@ function easeOut(t: number): number {
   return 1 - (1 - c) ** 2;
 }
 
-function easeInOut(t: number): number {
+function easeOutCubic(t: number): number {
   const c = Math.max(0, Math.min(1, t));
-  return c < 0.5 ? 2 * c * c : 1 - (-2 * c + 2) ** 2 / 2;
+  return 1 - (1 - c) ** 3;
 }
