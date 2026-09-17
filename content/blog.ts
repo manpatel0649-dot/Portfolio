@@ -1,45 +1,31 @@
-// Blog section — article cards (3 shown on portfolio)
-
 export type BlogPost = {
-  id: string;
+  category: string;
+  readTime: string;
   title: string;
-  excerpt: string;
-  date: string; // ISO date string
-  readTime: string; // e.g. "6 min read"
-  tags: string[];
+  date: string;
   url: string;
-  cover?: string; // path relative to /public, optional
 };
 
 export const blogPosts: BlogPost[] = [
   {
-    id: "blog-1",
-    title: "TODO: Blog post title", // TODO
-    excerpt: "TODO: 1–2 sentence preview of the post.", // TODO
-    date: "2026-01-01", // TODO
-    readTime: "TODO: e.g. 7 min read", // TODO
-    tags: ["LLM", "Fine-tuning"], // TODO
-    url: "TODO: https://...", // TODO
-    cover: undefined,
+    category: "LLM",
+    readTime: "8 min",
+    title: "What I learned training a language model from scratch",
+    date: "[date]",
+    url: "#", // TODO: add real URL
   },
   {
-    id: "blog-2",
-    title: "TODO: Blog post title", // TODO
-    excerpt: "TODO: 1–2 sentence preview of the post.", // TODO
-    date: "2026-01-01", // TODO
-    readTime: "TODO: e.g. 5 min read", // TODO
-    tags: ["AI Agents", "LangGraph"], // TODO
-    url: "TODO: https://...", // TODO
-    cover: undefined,
+    category: "Agents",
+    readTime: "6 min",
+    title: "Designing LangGraph agents that don't go off the rails",
+    date: "[date]",
+    url: "#", // TODO: add real URL
   },
   {
-    id: "blog-3",
-    title: "TODO: Blog post title", // TODO
-    excerpt: "TODO: 1–2 sentence preview of the post.", // TODO
-    date: "2026-01-01", // TODO
-    readTime: "TODO: e.g. 8 min read", // TODO
-    tags: ["Data Science", "ML"], // TODO
-    url: "TODO: https://...", // TODO
-    cover: undefined,
+    category: "Product",
+    readTime: "5 min",
+    title: "Why QA teams need generated test cases, not more checklists",
+    date: "[date]",
+    url: "#", // TODO: add real URL
   },
 ];

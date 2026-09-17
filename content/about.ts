@@ -1,38 +1,17 @@
-// About section — bio paragraph and timeline (merged from experience.ts)
-
 export const about = {
-  bio: "TODO: Write 4–5 line personal story — who you are, how you got here, what drives you.", // TODO
-
   photo: "/images/profile.jpg", // TODO: add photo to /public/images/
+  quote: {
+    before: "I learned ML by building it from the math up — now I build ",
+    italic: "companies",
+    after: " on top of it.",
+  },
+  bio: "[ 3–4 lines in your own words: how you started, what you build today, what you're looking for next. ]",
 
-  // Timeline entries — ordered chronologically (oldest first)
   timeline: [
-    {
-      year: "TODO", // TODO: e.g. "2021"
-      title: "Started Learning Python & Data Science",
-      description: "TODO: Brief description of this phase.", // TODO
-    },
-    {
-      year: "TODO", // TODO
-      title: "Built First ML Models",
-      description: "TODO: Brief description.", // TODO
-    },
-    {
-      year: "TODO", // TODO
-      title: "Founded Aoneq Labs",
-      description:
-        "TODO: Launched Aoneq Labs, delivered first AI automation projects for clients.", // TODO
-    },
-    {
-      year: "TODO", // TODO
-      title: "Founded Qeist.io",
-      description:
-        "TODO: Started building Qeist.io — AI-generated test cases for QA teams.", // TODO
-    },
-    {
-      year: "2026",
-      title: "LLM Lab",
-      description: "TODO: Describe LLM Lab milestone — training custom models, open-source releases.", // TODO
-    },
+    { label: "Start", text: "Python, data science & ML from scratch",     now: false },
+    { label: "Build", text: "Classical ML & NLP projects, custom regression from math", now: false },
+    { label: "Found", text: "Aoneq Labs — AI agents for businesses",       now: false },
+    { label: "Found", text: "Qeist.io — AI test-case generation",          now: false },
+    { label: "Now",   text: "LLM Lab — training my own language models",   now: true  },
   ],
 };

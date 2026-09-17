@@ -1,56 +1,56 @@
-// Data Science Showcase section — stats, pipeline steps, and chart data
+export const dsSection = {
+  label: "03",
+  labelText: "Data science & ML",
+  headline: { before: "Data → insight → ", italic: "decision" },
+  description: "Classical ML and analysis projects, shown the way I'd present them to a stakeholder.",
 
-export const dsShowcase = {
-  headline: "Data → Insights → Decisions",
-  subline: "Turning raw numbers into business value, end to end.", // TODO: refine
-
-  steps: [
+  kpis: [
     {
-      step: 1,
-      title: "Collect & Clean",
-      description: "Ingest, validate, and wrangle messy real-world data.",
-      icon: "Database",
+      title: "Churn prediction",
+      value: "[AUC]",
+      unit: "ROC",
+      description: "Flags at-risk customers early",
+      sparkColor: "#34d399",
+      sparkPoints: "0,40 25,36 50,38 75,28 100,30 125,20 150,18 175,10 200,8",
     },
     {
-      step: 2,
-      title: "Analyze & Visualize",
-      description: "Surface patterns, correlations, and outliers with clear charts.",
-      icon: "BarChart2",
+      title: "Spam detector · NLP",
+      value: "[F1]",
+      unit: "score",
+      description: "SMS & email classification",
+      sparkColor: "#34d399",
+      sparkPoints: "0,30 25,26 50,32 75,20 100,22 125,14 150,16 175,12 200,9",
     },
     {
-      step: 3,
-      title: "Predict & Deploy",
-      description: "Train, evaluate, and ship models that drive decisions.",
-      icon: "Rocket",
+      title: "Movie recommender",
+      value: "5k",
+      unit: "titles",
+      description: "Content-based similarity",
+      sparkColor: "rgba(255,230,203,.5)",
+      sparkPoints: "0,22 25,18 50,26 75,16 100,24 125,12 150,20 175,14 200,18",
+    },
+    {
+      title: "IPL analysis · EDA",
+      value: "[insight]",
+      unit: "",
+      description: "What actually wins matches",
+      sparkColor: "#ffbd38",
+      sparkPoints: "0,36 25,30 50,34 75,24 100,26 125,22 150,14 175,18 200,10",
     },
   ],
 
-  stats: [
-    { label: "Projects Completed", value: "15+", icon: "FolderCheck" }, // TODO: update
-    { label: "Model Accuracy (avg)", value: "92%", icon: "Target" }, // TODO: update
-    { label: "Data Points Processed", value: "10M+", icon: "Database" }, // TODO: update
+  featureImportance: [
+    { label: "tenure",          value: "0.31", width: 92 },
+    { label: "monthly_charges", value: "0.24", width: 74, delay: ".1s" },
+    { label: "contract_type",   value: "0.18", width: 58, delay: ".2s" },
+    { label: "support_calls",   value: "0.12", width: 40, delay: ".3s" },
+    { label: "payment_method",  value: "0.08", width: 26, delay: ".4s" },
   ],
 
-  // Recharts-compatible data arrays
-  charts: {
-    // Simple line chart — e.g. model accuracy over training epochs
-    trainingCurve: [
-      { epoch: 1, accuracy: 0.61, loss: 0.72 },
-      { epoch: 2, accuracy: 0.71, loss: 0.58 },
-      { epoch: 3, accuracy: 0.79, loss: 0.47 },
-      { epoch: 4, accuracy: 0.85, loss: 0.38 },
-      { epoch: 5, accuracy: 0.89, loss: 0.31 },
-      { epoch: 6, accuracy: 0.91, loss: 0.26 },
-      { epoch: 7, accuracy: 0.92, loss: 0.22 },
-    ], // TODO: replace with real training data
-
-    // Bar chart — feature importance or category breakdown
-    featureImportance: [
-      { feature: "Age", importance: 0.22 },
-      { feature: "Balance", importance: 0.18 },
-      { feature: "Tenure", importance: 0.15 },
-      { feature: "Products", importance: 0.13 },
-      { feature: "Activity", importance: 0.11 },
-    ], // TODO: replace with real project data
-  },
+  pipeline: [
+    { idx: "01", title: "Collect & clean", description: "APIs, SQL, messy CSVs → tidy data" },
+    { idx: "02", title: "Explore",         description: "EDA, statistics, hypothesis tests" },
+    { idx: "03", title: "Model",           description: "Features, training, honest evaluation" },
+    { idx: "04", title: "Deploy",          description: "APIs, dashboards, Streamlit apps" },
+  ],
 };

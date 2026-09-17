@@ -1,0 +1,54 @@
+// Fixed background layers behind all content. The 3D canvas will be added here later.
+export default function BackgroundLayers() {
+  return (
+    <>
+      {/* ── 3D Canvas slot — R3F Canvas mounts here (lazy-loaded, ssr:false) ── */}
+      {/* <CanvasRoot /> will go here in the 3D task */}
+
+      {/* Glow A — large teal circle top-right */}
+      <div
+        className="fixed pointer-events-none z-0 rounded-full"
+        style={{
+          width: 760,
+          height: 760,
+          right: -200,
+          top: -240,
+          background: "rgba(20,120,95,.22)",
+          filter: "blur(120px)",
+        }}
+      />
+
+      {/* Glow B — smaller emerald circle bottom-left */}
+      <div
+        className="fixed pointer-events-none z-0 rounded-full"
+        style={{
+          width: 640,
+          height: 640,
+          left: -240,
+          bottom: -260,
+          background: "rgba(52,211,153,.08)",
+          filter: "blur(120px)",
+        }}
+      />
+
+      {/* Film grain overlay */}
+      <div
+        className="fixed pointer-events-none z-[1]"
+        style={{
+          inset: "-50%",
+          opacity: 0.07,
+          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+        }}
+      />
+
+      {/* Vignette — darkens edges to keep text readable over 3D */}
+      <div
+        className="fixed inset-0 pointer-events-none z-[1]"
+        style={{
+          background:
+            "radial-gradient(ellipse at 50% 40%, transparent 40%, rgba(2,14,14,.75) 100%)",
+        }}
+      />
+    </>
+  );
+}

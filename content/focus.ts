@@ -1,60 +1,59 @@
-// "What I Do" section — 6 focus area cards
-
-export type FocusCard = {
-  id: string;
+export type CapabilityCell = {
+  idx: string;
   title: string;
+  titleItalic: string; // the italic emerald word
   description: string;
-  icon: string; // lucide-react icon name
-  gradient: string; // tailwind gradient classes for card accent
+  tools: string;
+  tier: "core" | "supporting";
 };
 
-export const focusCards: FocusCard[] = [
+export const capabilities: CapabilityCell[] = [
   {
-    id: "llm-dev",
-    title: "LLM Development",
-    description:
-      "Pre-training, fine-tuning with LoRA/QLoRA, RLHF/DPO alignment, and quantization. I build language models from the ground up, not just prompt them.", // TODO: refine
-    icon: "BrainCircuit",
-    gradient: "from-violet-600 to-purple-800",
+    idx: "01",
+    title: "LLM ",
+    titleItalic: "Development",
+    description: "Building language models from scratch — tokenizers, pre-training, fine-tuning.",
+    tools: "Transformers · Attention · BPE · LoRA/QLoRA · DPO · Quantization",
+    tier: "core",
   },
   {
-    id: "llm-apps",
-    title: "LLM Applications",
-    description:
-      "RAG pipelines, prompt engineering, vector databases, and embedding search. Production-grade LLM-powered apps using OpenAI, Claude, and Hugging Face.", // TODO: refine
-    icon: "Layers",
-    gradient: "from-purple-600 to-indigo-700",
+    idx: "02",
+    title: "AI ",
+    titleItalic: "Agents",
+    description: "Multi-agent systems that research, decide and act on their own.",
+    tools: "LangGraph · LangChain · Tool calling · n8n",
+    tier: "core",
   },
   {
-    id: "ai-agents",
-    title: "AI Agents",
-    description:
-      "Multi-agent systems with tool calling, LangChain, LangGraph, and n8n. Autonomous workflows that research, decide, and act.", // TODO: refine
-    icon: "Bot",
-    gradient: "from-cyan-600 to-blue-700",
+    idx: "03",
+    title: "LLM ",
+    titleItalic: "Applications",
+    description: "RAG pipelines, evals and production LLM features.",
+    tools: "RAG · Vector DBs · Embeddings · Hugging Face",
+    tier: "core",
   },
   {
-    id: "nlp-dl",
-    title: "NLP & Deep Learning",
-    description:
-      "Text classification, NER, embeddings, CNNs, RNNs and LSTMs. PyTorch and TensorFlow for production deep learning workloads.", // TODO: refine
-    icon: "Network",
-    gradient: "from-blue-600 to-cyan-700",
+    idx: "04",
+    title: "NLP & ",
+    titleItalic: "Deep Learning",
+    description: "Models that understand, classify and generate text.",
+    tools: "PyTorch · TensorFlow · NER · Text classification",
+    tier: "core",
   },
   {
-    id: "data-science",
-    title: "Data Science & ML",
-    description:
-      "End-to-end: EDA, feature engineering, model selection, evaluation, and deployment. scikit-learn, Pandas, and full BI stack.", // TODO: refine
-    icon: "BarChart2",
-    gradient: "from-teal-600 to-emerald-700",
+    idx: "05",
+    title: "Data Science ",
+    titleItalic: "& ML",
+    description: "EDA, statistics and predictive models tied to business outcomes.",
+    tools: "Pandas · SQL · scikit-learn · Plotly · Power BI",
+    tier: "core",
   },
   {
-    id: "software-web",
+    idx: "06",
     title: "Software & Web",
-    description:
-      "Full-stack engineering with React, Next.js, FastAPI, and Node.js. Clean APIs, scalable architecture, and polished interfaces.", // TODO: refine
-    icon: "Code2",
-    gradient: "from-emerald-600 to-green-700",
+    titleItalic: "",
+    description: "Full-stack apps and APIs that put models in front of users.",
+    tools: "Next.js · React · FastAPI · Docker · Vercel",
+    tier: "supporting",
   },
 ];
