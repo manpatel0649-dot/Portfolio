@@ -1,9 +1,11 @@
-// Fixed background layers behind all content. The 3D canvas will be added here later.
+import DynamicCanvas from "@/components/three/DynamicCanvas";
+
+// Fixed background layers behind all content.
 export default function BackgroundLayers() {
   return (
     <>
-      {/* ── 3D Canvas slot — R3F Canvas mounts here (lazy-loaded, ssr:false) ── */}
-      {/* <CanvasRoot /> will go here in the 3D task */}
+      {/* ── 3D Canvas — R3F, WebGL, client-only (ssr:false) ── */}
+      <DynamicCanvas />
 
       {/* Glow A — large teal circle top-right */}
       <div
