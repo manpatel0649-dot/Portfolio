@@ -1,31 +1,30 @@
 "use client";
 
 /**
- * NeuralNetwork — the always-animating 3D network in Stage A (hero idle).
- * Runs entirely in useFrame: no React state updates, no per-frame allocations.
+ * NeuralNetwork — the 3D network visible during Stages A, B, D, E, F.
+ * Reads scene state from useSceneStore in useFrame (no React re-renders per frame).
  */
 
 import { useRef, useMemo, useEffect } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { nodes, edges, nodeOutEdges } from "@/lib/network";
+import { nodes, edges, nodeOutEdges, TARGET_NEURON_IDX, TARGET_NEURON_POS } from "@/lib/network";
+import { getSceneState } from "@/components/three/useSceneStore";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const PULSE_COUNT    = 40;   // max alive pulses (reference: 40)
-const MOBILE_PULSES  = 20;   // fewer pulses on mobile
-const NODE_RADIUS    = 0.10; // world-unit sphere radius
+const PULSE_COUNT   = 40;
+const MOBILE_PULSES = 20;
+const NODE_RADIUS   = 0.14; // PRE-FIX: was 0.10, +40% per design review
 
-// Reference colours (exact from portfolio-mockup-v2.html)
-// toneMapped:false + values > 1 → Bloom picks these up as HDR
 const CREAM    = new THREE.Color("#ffe6cb");
-const EM_HDR   = new THREE.Color(0.8, 3.2, 1.4);  // HDR emerald → strong bloom
-const EDGE_COL = new THREE.Color(160 / 255, 235 / 255, 205 / 255); // rgba(160,235,205)
+const EM_HDR   = new THREE.Color(0.8, 3.2, 1.4);   // HDR → Bloom picks it up
+const EDGE_COL = new THREE.Color(160 / 255, 235 / 255, 205 / 255);
 
-// ── Scratch objects — allocated ONCE, reused every frame ──────────────────────
+// ── Module-level scratch objects (zero per-frame allocation) ─────────────────
 
-const _obj   = new THREE.Object3D();
-const _col   = new THREE.Color();
+const _obj = new THREE.Object3D();
+const _col = new THREE.Color();
 
 // ── Pulse state ───────────────────────────────────────────────────────────────
 
@@ -34,54 +33,47 @@ interface Pulse { edgeIdx: number; progress: number; speed: number }
 function makePulses(count: number): Pulse[] {
   return Array.from({ length: count }, () => ({
     edgeIdx:  Math.floor(Math.random() * edges.length),
-    progress: Math.random(), // stagger so they don't all fire at once
-    speed:    (0.006 + Math.random() * 0.01) * 60, // ref v * 60fps → per-second
+    progress: Math.random(),
+    speed:    (0.006 + Math.random() * 0.01) * 60, // per-second
   }));
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function NeuralNetwork() {
-  const meshRef    = useRef<THREE.InstancedMesh>(null);
-  const nodeMatRef = useRef<THREE.MeshBasicMaterial>(null);
-  const edgeMatRef = useRef<THREE.LineBasicMaterial>(null);
-  const pulseMatRef= useRef<THREE.PointsMaterial>(null);
-  const groupRef   = useRef<THREE.Group>(null);
+  const meshRef     = useRef<THREE.InstancedMesh>(null);
+  const nodeMatRef  = useRef<THREE.MeshBasicMaterial>(null);
+  const edgeMatRef  = useRef<THREE.LineBasicMaterial>(null);
+  const pulseMatRef = useRef<THREE.PointsMaterial>(null);
+  const ringRef     = useRef<THREE.Mesh>(null);
+  const ringMatRef  = useRef<THREE.MeshBasicMaterial>(null);
+  const groupRef    = useRef<THREE.Group>(null);
 
   const { size } = useThree();
-  const isMobile = size.width < 900;
+  const isMobile  = size.width < 900;
 
-  // Detect reduced-motion once (safe inside a client component)
   const reducedMotion = useMemo(
-    () =>
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
     [],
   );
 
-  // Pulse data — mutable plain objects, never trigger React re-renders
   const activePulseCount = isMobile ? MOBILE_PULSES : PULSE_COUNT;
   const pulses = useMemo(() => makePulses(activePulseCount), [activePulseCount]);
 
-  // Per-node glow strength 0→1, decayed each frame (matches `act` in reference)
   const nodeGlow = useMemo(() => new Float32Array(nodes.length), []);
-
-  // Pre-allocated Float32Array for pulse GPU positions — never reallocated
   const pulsePos = useMemo(() => new Float32Array(PULSE_COUNT * 3), []);
 
-  // Pulse BufferGeometry — created once, position attribute updated in useFrame
   const pulseGeo = useMemo(() => {
     const geo  = new THREE.BufferGeometry();
     const attr = new THREE.BufferAttribute(pulsePos, 3);
-    attr.setUsage(THREE.DynamicDrawUsage); // hint to GPU: data changes every frame
+    attr.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute("position", attr);
     return geo;
   }, [pulsePos]);
 
-  // Edge BufferGeometry — fully static, built once from network topology
   const edgeGeo = useMemo(() => {
     const geo = new THREE.BufferGeometry();
-    const arr = new Float32Array(edges.length * 6); // 2 verts × 3 components
+    const arr = new Float32Array(edges.length * 6);
     edges.forEach((e, i) => {
       arr[i * 6 + 0] = e.fromPos[0]; arr[i * 6 + 1] = e.fromPos[1]; arr[i * 6 + 2] = e.fromPos[2];
       arr[i * 6 + 3] = e.toPos[0];  arr[i * 6 + 4] = e.toPos[1];  arr[i * 6 + 5] = e.toPos[2];
@@ -90,11 +82,14 @@ export default function NeuralNetwork() {
     return geo;
   }, []);
 
-  // Mouse smoothed target (not React state — just a ref)
-  const mouse         = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
-  const scrollProgress = useRef(0);
+  const mouse = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
 
-  // ── Initialise node instance matrices + base colours ──────────────────────
+  // Capture position of target neuron in group-local coords for the glow ring
+  const targetNodePos = useMemo(
+    () => new THREE.Vector3(...TARGET_NEURON_POS),
+    [],
+  );
+
   useEffect(() => {
     const mesh = meshRef.current;
     if (!mesh) return;
@@ -110,13 +105,10 @@ export default function NeuralNetwork() {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }, []);
 
-  // ── Event listeners (passive, clean up on unmount) ────────────────────────
-
   useEffect(() => {
     if (isMobile || reducedMotion) return;
     const onMove = (e: MouseEvent) => {
       const m = mouse.current;
-      // tx/ty in -0.5..+0.5 range (matching reference)
       m.tx = e.clientX / window.innerWidth  - 0.5;
       m.ty = e.clientY / window.innerHeight - 0.5;
     };
@@ -124,115 +116,171 @@ export default function NeuralNetwork() {
     return () => window.removeEventListener("mousemove", onMove);
   }, [isMobile, reducedMotion]);
 
-  useEffect(() => {
-    const onScroll = () => {
-      // Normalised scroll progress through the hero (~1 × viewport height)
-      scrollProgress.current = Math.min(1, window.scrollY / (window.innerHeight * 1.2));
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  // ── Per-frame animation ───────────────────────────────────────────────────
-
   useFrame((state, delta) => {
     const mesh  = meshRef.current;
     const group = groupRef.current;
     if (!mesh || !group) return;
 
-    const t  = state.clock.elapsedTime;
-    const sp = scrollProgress.current;
+    const { stage, stageProgress: sp, totalProgress } = getSceneState();
+    const t = state.clock.elapsedTime;
 
-    // — Smooth mouse (expo-out, matching reference .04 coefficient)
+    // Smooth mouse
     const m = mouse.current;
     m.x += (m.tx - m.x) * 0.04;
     m.y += (m.ty - m.y) * 0.04;
 
-    // — Group position
-    // Reference: cx = W*(0.72 + sp*0.12) at 1440px maps to ~2.3→3.6 world units right
-    // Reference: cy = H*(0.46 + sp*0.06) ≈ centred, drifts slightly down
-    const targetX = isMobile ? 0    : lerp(2.3, 3.7, sp);
-    const targetY = isMobile ? 0.5  : lerp(0.1, -0.2, sp);
-    group.position.x += (targetX - group.position.x) * 0.05;
-    group.position.y += (targetY - group.position.y) * 0.05;
+    // ── Stage-dependent group position, rotation, scale, alpha ──────────────
 
-    // — Rotation (exact reference formula, converted to radians)
-    // ry = t*0.12 + mx*0.8  (reference)
-    // rx = -0.25 + my*0.5 + sin(t*0.2)*0.08  (reference, -0.25 = initial tilt back)
-    if (!reducedMotion) {
-      group.rotation.y = t * 0.12 + m.x * 0.8;
-      group.rotation.x = -0.25 + m.y * 0.5 + Math.sin(t * 0.2) * 0.08;
+    let targetX: number, targetY: number, alpha: number, scale: number;
+    let rotY: number, rotX: number;
+
+    const idleRotY = t * 0.12 + m.x * 0.8;
+    const idleRotX = -0.25 + m.y * 0.5 + Math.sin(t * 0.2) * 0.08;
+
+    switch (stage) {
+      case "A":
+        targetX = isMobile ? 0 : 2.3;
+        targetY = isMobile ? 0.5 : 0.1;
+        scale   = isMobile ? 0.65 : 1.15;
+        alpha   = isMobile ? 0.55 : 1.0;
+        rotY    = reducedMotion ? 0 : idleRotY;
+        rotX    = reducedMotion ? 0 : idleRotX;
+        break;
+
+      case "B": {
+        // Centre the network; damp rotation to 0 as B progresses
+        targetX = isMobile ? 0 : lerp(2.3, 0, easeOut(sp));
+        targetY = isMobile ? 0.2 : lerp(0.1, 0, easeOut(sp));
+        scale   = isMobile ? lerp(0.65, 0.55, sp) : lerp(1.15, 1.05, sp);
+        // Keep mostly visible through B; fade slightly toward end
+        alpha   = Math.max(0.25, 1 - sp * 0.75);
+        // Rotation damps: full idle at sp=0, frozen at sp=1
+        const damp = 1 - easeOut(sp);
+        rotY = idleRotY * damp;
+        rotX = idleRotX * damp;
+
+        // Keep target neuron glowing throughout B
+        nodeGlow[TARGET_NEURON_IDX] = Math.max(
+          nodeGlow[TARGET_NEURON_IDX],
+          easeOut(sp) * 0.85 + 0.15,
+        );
+
+        // Glow ring around target neuron
+        const ring = ringRef.current;
+        if (ring && ringMatRef.current) {
+          ring.visible = true;
+          const pulse  = 1 + Math.sin(t * 4) * 0.08;
+          ring.scale.setScalar((0.8 + easeOut(sp) * 0.6) * pulse);
+          ringMatRef.current.opacity = easeOut(sp) * 0.6;
+        }
+        break;
+      }
+
+      case "C":
+        // Network fully hidden during interior view
+        targetX = isMobile ? 0 : 0;
+        targetY = 0;
+        scale   = 1.0;
+        alpha   = Math.max(0, 1 - sp * 4); // quick fade-out
+        rotY = 0; rotX = 0;
+        break;
+
+      case "D":
+        // Pull back — network fades back in centred
+        targetX = 0;
+        targetY = 0;
+        scale   = 1.0;
+        alpha   = Math.min(1, sp * 3);      // quick fade-in
+        rotY = 0; rotX = 0;
+        break;
+
+      case "E":
+        targetX = 0;
+        targetY = 0;
+        scale   = 1.0;
+        alpha   = 0.85;
+        rotY = 0; rotX = 0;
+        break;
+
+      case "F":
+      default:
+        targetX = isMobile ? 0 : lerp(0, 2.3, easeOut(sp));
+        targetY = isMobile ? 0.5 : lerp(0, 0.1, sp);
+        scale   = lerp(1.0, isMobile ? 0.55 : 0.9, sp);
+        alpha   = lerp(0.85, 0.38, sp);
+        // Resume gentle idle rotation
+        const slowRot = sp * 0.3;
+        rotY = idleRotY * slowRot;
+        rotX = idleRotX * slowRot;
+        break;
     }
 
-    // — Scale: reference (W/1440)*1.15 * (1 - sp*0.13) — adapt to fixed world units
-    const baseScale = isMobile
-      ? lerp(0.60, 0.50, sp)
-      : lerp(1.15, 1.00, sp);
-    group.scale.setScalar(baseScale);
+    // Delta-based lerp: snaps immediately at 1fps (headless screenshots),
+    // smooth ~10%/frame at 60fps. min(1, ...) prevents overshoot.
+    const lt = Math.min(1, 6 * delta);
+    group.position.x += (targetX - group.position.x) * lt;
+    group.position.y += (targetY - group.position.y) * lt;
+    group.rotation.y = rotY;
+    group.rotation.x = rotX;
+    group.scale.setScalar(scale);
 
-    // — Global opacity (desktop fades to 38% after hero, matches reference alpha)
-    const alpha = isMobile
-      ? Math.max(0.3, 0.55 - sp * 0.25)
-      : Math.max(0.38, 1 - sp * 0.62);
+    // Hide ring when not in Stage B
+    if (stage !== "B") {
+      const ring = ringRef.current;
+      if (ring) ring.visible = false;
+    }
+
+    // ── Material opacity ───────────────────────────────────────────────────
 
     const nodeMat  = nodeMatRef.current;
     const edgeMat  = edgeMatRef.current;
     const pulseMat = pulseMatRef.current;
     if (nodeMat)  nodeMat.opacity  = alpha;
-    // Edges: 0.085 * alpha (reference uses d*d factor; approximate here)
     if (edgeMat)  edgeMat.opacity  = 0.085 * alpha;
     if (pulseMat) pulseMat.opacity = 0.85 * alpha;
 
-    // — Advance pulses (skip if reduced-motion)
-    if (!reducedMotion) {
-      for (let pi = 0; pi < activePulseCount; pi++) {
-        const pulse = pulses[pi];
-        pulse.progress += delta * pulse.speed;
+    // Skip animation when network is invisible
+    if (alpha < 0.02 || reducedMotion) return;
 
-        if (pulse.progress >= 1) {
-          // Arrived at destination node — light it up
-          const destIdx = edges[pulse.edgeIdx].toIdx;
-          nodeGlow[destIdx] = 1.0;
+    // ── Advance pulses ─────────────────────────────────────────────────────
 
-          // Route to an outgoing edge (matches reference: 80% continue, 20% spawn fresh)
-          const outs = nodeOutEdges.get(destIdx);
-          if (outs && outs.length > 0 && Math.random() < 0.8) {
-            pulse.edgeIdx = outs[Math.floor(Math.random() * outs.length)];
-          } else {
-            // Output layer or 20% chance: restart from a random edge
-            pulse.edgeIdx = Math.floor(Math.random() * edges.length);
-          }
-          pulse.progress = 0;
-          pulse.speed    = (0.006 + Math.random() * 0.01) * 60;
+    for (let pi = 0; pi < activePulseCount; pi++) {
+      const pulse = pulses[pi];
+      pulse.progress += delta * pulse.speed;
+
+      if (pulse.progress >= 1) {
+        const destIdx = edges[pulse.edgeIdx].toIdx;
+        nodeGlow[destIdx] = 1.0;
+
+        const outs = nodeOutEdges.get(destIdx);
+        if (outs && outs.length > 0 && Math.random() < 0.8) {
+          pulse.edgeIdx = outs[Math.floor(Math.random() * outs.length)];
+        } else {
+          pulse.edgeIdx = Math.floor(Math.random() * edges.length);
         }
-
-        // Interpolate pulse world position along edge
-        const e = edges[pulse.edgeIdx];
-        const p = pulse.progress;
-        const b = pi * 3;
-        pulsePos[b]     = e.fromPos[0] + (e.toPos[0] - e.fromPos[0]) * p;
-        pulsePos[b + 1] = e.fromPos[1] + (e.toPos[1] - e.fromPos[1]) * p;
-        pulsePos[b + 2] = e.fromPos[2] + (e.toPos[2] - e.fromPos[2]) * p;
+        pulse.progress = 0;
+        pulse.speed    = (0.006 + Math.random() * 0.01) * 60;
       }
 
-      // Push unused slots (mobile) off-screen so they're invisible
-      for (let pi = activePulseCount; pi < PULSE_COUNT; pi++) {
-        pulsePos[pi * 3] = pulsePos[pi * 3 + 1] = pulsePos[pi * 3 + 2] = 1e6;
-      }
-
-      // Mark the buffer dirty so the GPU uploads new positions
-      (pulseGeo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+      const e = edges[pulse.edgeIdx];
+      const p = pulse.progress;
+      const b = pi * 3;
+      pulsePos[b]     = e.fromPos[0] + (e.toPos[0] - e.fromPos[0]) * p;
+      pulsePos[b + 1] = e.fromPos[1] + (e.toPos[1] - e.fromPos[1]) * p;
+      pulsePos[b + 2] = e.fromPos[2] + (e.toPos[2] - e.fromPos[2]) * p;
     }
+    for (let pi = activePulseCount; pi < PULSE_COUNT; pi++) {
+      pulsePos[pi * 3] = pulsePos[pi * 3 + 1] = pulsePos[pi * 3 + 2] = 1e6;
+    }
+    (pulseGeo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
 
-    // — Update node glow colours
-    // Reference: `act *= 0.96` per frame at 60 fps → frame-rate independent version
+    // ── Node glow decay ────────────────────────────────────────────────────
+
     let anyChanged = false;
     for (let ni = 0; ni < nodes.length; ni++) {
       const g = nodeGlow[ni];
       if (g > 0.001) {
-        // Frame-rate-independent exponential decay matching reference 0.96^60fps
         nodeGlow[ni] = g * Math.pow(0.96, 60 * delta);
-        // Lerp from cream → HDR emerald
         _col.copy(CREAM).lerp(EM_HDR, easeOut(nodeGlow[ni]));
         mesh.setColorAt(ni, _col);
         anyChanged = true;
@@ -242,33 +290,31 @@ export default function NeuralNetwork() {
         anyChanged = true;
       }
     }
-    // Only mark instanceColor dirty when something actually changed (saves bandwidth)
     if (anyChanged && mesh.instanceColor) {
       mesh.instanceColor.needsUpdate = true;
     }
   });
 
-  // ── JSX ───────────────────────────────────────────────────────────────────
+  const [tnX, tnY, tnZ] = TARGET_NEURON_POS;
 
-  // Initial group position matches reference desktop default (cx=72% of 1440px)
   return (
     <group
       ref={groupRef}
       position={[isMobile ? 0 : 2.3, isMobile ? 0.5 : 0.1, 0]}
-      rotation={[reducedMotion ? 0 : -0.25, 0, 0]} // initial tilt from reference
+      rotation={[reducedMotion ? 0 : -0.25, 0, 0]}
     >
-      {/* ── Nodes: one instanced draw call for all 60 spheres ── */}
+      {/* ── 60 node spheres — one instanced draw call ── */}
       <instancedMesh ref={meshRef} args={[undefined, undefined, nodes.length]}>
-        <sphereGeometry args={[NODE_RADIUS, 8, 6]} />
+        <sphereGeometry args={[NODE_RADIUS, 10, 8]} />
         <meshBasicMaterial
           ref={nodeMatRef}
           vertexColors
           transparent
-          toneMapped={false} // bypass tone-mapping → Bloom can detect HDR emissives
+          toneMapped={false}
         />
       </instancedMesh>
 
-      {/* ── Edges: one LineSegments draw call for all ~250 connections ── */}
+      {/* ── ~250 edges ── */}
       <lineSegments geometry={edgeGeo}>
         <lineBasicMaterial
           ref={edgeMatRef}
@@ -279,28 +325,45 @@ export default function NeuralNetwork() {
         />
       </lineSegments>
 
-      {/* ── Signal pulses: Points with pre-allocated dynamic buffer ── */}
+      {/* ── Signal pulses ── */}
       <points geometry={pulseGeo}>
         <pointsMaterial
           ref={pulseMatRef}
           color={EM_HDR}
-          size={isMobile ? 0.045 : 0.06}
+          size={isMobile ? 0.055 : 0.075}
           sizeAttenuation
           transparent
           opacity={0.85}
           toneMapped={false}
         />
       </points>
+
+      {/* ── Target-neuron glow ring (Stage B only) ── */}
+      <mesh
+        ref={ringRef}
+        position={[tnX, tnY, tnZ]}
+        visible={false}
+      >
+        {/* torus: radius=0.26, tube=0.018 — rings the target neuron */}
+        <torusGeometry args={[0.26, 0.018, 10, 36]} />
+        <meshBasicMaterial
+          ref={ringMatRef}
+          color={EM_HDR}
+          transparent
+          opacity={0}
+          toneMapped={false}
+        />
+      </mesh>
     </group>
   );
 }
 
-// ── Utilities (module-level, not hooks) ───────────────────────────────────────
+// ── Utilities ─────────────────────────────────────────────────────────────────
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * Math.max(0, Math.min(1, t));
 }
 
 function easeOut(t: number): number {
-  return 1 - (1 - t) * (1 - t);
+  return 1 - (1 - Math.max(0, Math.min(1, t))) ** 2;
 }

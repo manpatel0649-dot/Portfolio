@@ -1,34 +1,30 @@
 /**
  * Scene state for the 3D scroll story.
- * Only Stage A (idle network) is implemented now.
  *
- * Future stages — plug-in guide for subsequent tasks:
- *   B  (progress 0.08–0.35): GSAP ScrollTrigger pin drives setSceneState({ stage:"B", stageProgress:p })
- *      → camera dives toward a chosen neuron; NeuralNetwork fades; NeuronInterior mounts
- *   C  (0.35–0.50): Inside neuron — input signals, Σ node, activation curve, output arrow
- *   D  (0.50–0.60): Camera pulls back; NeuronInterior unmounts; full network reappears centred
- *   E  (0.60–0.95): Camera orbits (front→side→top→back); HUDPanel shows live topology values
- *   F  (0.95–1.00): Unpin; network drifts right, scales to ~40 % opacity (Stage A resumes)
- *
- * Implementation pattern for each new stage:
- *   1. Add any extra SceneState fields (e.g. targetNeuronIdx for Stage B)
- *   2. In SceneManager.tsx, watch GSAP ScrollTrigger progress and call setSceneState()
- *   3. In CanvasRoot / NeuralNetwork, branch on `getSceneState().stage`
+ * Stage mapping:
+ *   A  (totalProgress 0–0.08)    — idle network, hero text visible
+ *   B  (totalProgress 0.08–0.35) — camera dives toward target neuron
+ *   C  (totalProgress 0.35–0.50) — inside the neuron, interior view
+ *   D  (totalProgress 0.50–0.60) — camera pulls back, network reappears
+ *   E  (totalProgress 0.60–0.95) — orbit + HUD (next task, holds centered now)
+ *   F  (totalProgress 0.95–1.00) — unpin, network drifts right and dims
  */
 
 export type Stage = "A" | "B" | "C" | "D" | "E" | "F";
 
 export interface SceneState {
   stage:         Stage;
-  stageProgress: number;                        // 0–1 within the current stage
+  stageProgress: number;  // 0–1 within the current stage
+  totalProgress: number;  // 0–1 across the full hero pin
   cameraTarget:  readonly [number, number, number];
 }
 
-// ── Module-level store with a minimal pub/sub (no external dependency) ────────
+// ── Module-level store (no external deps) ─────────────────────────────────────
 
 let _state: SceneState = {
   stage:         "A",
   stageProgress: 0,
+  totalProgress: 0,
   cameraTarget:  [0, 0, 0],
 };
 
@@ -43,13 +39,13 @@ export function setSceneState(patch: Partial<SceneState>): void {
   _listeners.forEach((fn) => fn());
 }
 
-/** Returns an unsubscribe function — compatible with React.useSyncExternalStore */
+/** Returns an unsubscribe fn — compatible with React.useSyncExternalStore */
 export function subscribeSceneState(fn: () => void): () => void {
   _listeners.add(fn);
   return () => _listeners.delete(fn);
 }
 
-// ── Optional React hook ───────────────────────────────────────────────────────
+// ── Optional React hooks ──────────────────────────────────────────────────────
 
 import { useSyncExternalStore } from "react";
 
@@ -57,6 +53,14 @@ export function useStage(): Stage {
   return useSyncExternalStore(
     subscribeSceneState,
     () => _state.stage,
-    () => "A" as Stage, // server snapshot
+    () => "A" as Stage,
+  );
+}
+
+export function useSceneStateReactive(): SceneState {
+  return useSyncExternalStore(
+    subscribeSceneState,
+    () => _state,
+    () => _state,
   );
 }

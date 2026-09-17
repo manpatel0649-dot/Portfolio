@@ -80,10 +80,13 @@
   *, *::before, *::after { box-sizing: border-box; }
 
   html {
-    scroll-behavior: smooth;
+    /* scroll-behavior: smooth removed — Lenis handles smooth scroll */
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+  /* Lenis requires scroll-behavior auto to avoid double-smoothing */
+  .lenis.lenis-smooth { scroll-behavior: auto !important; }
+  .lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
 
   body {
     background-color: var(--bg);

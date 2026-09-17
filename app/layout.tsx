@@ -8,6 +8,7 @@ import {
 import { Analytics } from "@vercel/analytics/react";
 import { Toaster } from "@/components/ui/sonner";
 import BackgroundLayers from "@/components/ui/BackgroundLayers";
+import ScrollProvider from "@/components/ScrollProvider";
 import "./globals.css";
 
 const geist = Geist({
@@ -61,10 +62,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={fontVars}>
       <body className="antialiased overflow-x-hidden">
-        {/* Fixed background: glows, grain, vignette — 3D canvas mounts here later */}
+        {/* Fixed background: glows, grain, vignette, 3D canvas */}
         <BackgroundLayers />
-        {/* All page content at z-index 2 */}
-        <div className="relative z-[2]">{children}</div>
+        {/* Lenis smooth scroll + GSAP ScrollTrigger hero pin */}
+        <ScrollProvider>
+          {/* All page content at z-index 2 */}
+          <div className="relative z-[2]">{children}</div>
+        </ScrollProvider>
         <Analytics />
         <Toaster />
       </body>

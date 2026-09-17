@@ -136,3 +136,9 @@ export const NETWORK_STATS = {
   fullParams,                        // 650
   renderedEdges: edges.length,       // ≈ 42% × 596 ≈ 250
 } as const;
+
+// ── Target neuron for Stage B dive ──────────────────────────────────────────
+// Layer 2 (0-indexed), node 7 — middle of first 14-wide layer
+// Caption in NeuronInterior: "NEURON 2·07 — HIDDEN LAYER 2"
+export const TARGET_NEURON_IDX = 6 + 10 + 7; // globalIdx = 23
+export const TARGET_NEURON_POS = nodes[TARGET_NEURON_IDX].position; // world pos when group at origin

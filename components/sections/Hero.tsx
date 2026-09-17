@@ -5,14 +5,16 @@ import TrainingTerminal from "@/components/effects/TrainingTerminal";
 export default function Hero() {
   return (
     <header
+      id="hero"
       style={{
         padding: "88px 0 0",
-        minHeight: "calc(100vh - 100px)",
+        minHeight: "100dvh",
       }}
     >
       <div className="wrap">
-        {/* Two-column grid: headline left, terminal right */}
+        {/* Two-column grid: headline left, terminal right — id for GSAP scrub fade */}
         <div
+          id="hero-content"
           style={{
             display: "grid",
             gridTemplateColumns: "1.2fr .8fr",
@@ -86,8 +88,9 @@ export default function Hero() {
           <TrainingTerminal />
         </div>
 
-        {/* Proof strip */}
+        {/* Proof strip — id for GSAP scrub fade */}
         <div
+          id="hero-proof"
           style={{
             marginTop: 84,
             display: "grid",
