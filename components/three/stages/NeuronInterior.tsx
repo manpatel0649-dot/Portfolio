@@ -300,7 +300,7 @@ export default function NeuronInterior() {
           size={0.04}
           sizeAttenuation
           transparent
-          opacity={0.8}
+          opacity={0}
           toneMapped={false}
         />
       </points>
@@ -312,7 +312,7 @@ export default function NeuronInterior() {
           ref={coreMtRef}
           color={EM_HDR}
           transparent
-          opacity={0.9}
+          opacity={0}
           toneMapped={false}
         />
       </mesh>
