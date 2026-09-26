@@ -59,21 +59,21 @@ const BG_POS: [number, number, number][] = [
 
 // ── Core decoration constants — scaled to match reference pixel sizes at 272px/wu ─
 
-const BASE_RIM   = 0.075;   // ~20 px — inside compact halo
-const RIM_AMP1   = 0.006;
-const RIM_AMP2   = 0.004;
-const ARC_RADII  = [0.10, 0.13, 0.17] as const;   // 27/35/46 px — inside halo
+const BASE_RIM   = 0.132;   // 36 px (per spec) — outside G=1.0 bloom radius
+const RIM_AMP1   = 0.008;
+const RIM_AMP2   = 0.005;
+const ARC_RADII  = [0.184, 0.228, 0.272] as const;  // 50/62/74 px (per spec)
 const ARC_SPEEDS = [0.40,  0.65,  0.90]  as const;
-const MOTE_R     = 0.14;    // 38 px
-const MOTE_VAR   = 0.030;
-const RIPPLE_R0  = 0.07;
-const RIPPLE_DR  = 0.045;
+const MOTE_R     = 0.213;   // 58 px (per spec)
+const MOTE_VAR   = 0.044;
+const RIPPLE_R0  = 0.124;
+const RIPPLE_DR  = 0.070;
 const RIPPLE_DUR = 0.6;
 
 // ── Three.js constants ─────────────────────────────────────────────────────────
 
-// Nucleus HDR: G=1.4 → luminance ≈1.1 → moderate bloom radius (~80px), not wall-filling
-const EM_HDR    = new THREE.Color(0.5, 1.4, 0.8);
+// Nucleus: tiny 7px sphere at G=1.8 — point-source bloom stays inside 36px rim
+const EM_HDR    = new THREE.Color(0.5, 1.8, 0.8);
 const AMBER_HDR = new THREE.Color(1.0, 0.74, 0.22);
 const EM_HEX    = "#34d399";
 const AMBER_HEX = "#ffbd38";
@@ -133,9 +133,11 @@ function makeHaloTex(size = 128): THREE.CanvasTexture {
   c.width   = c.height = size;
   const ctx = c.getContext("2d")!;
   const grd = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
-  grd.addColorStop(0,    "rgba(200,255,220,0.90)");
-  grd.addColorStop(0.20, "rgba(52,211,153,0.55)");
-  grd.addColorStop(0.55, "rgba(52,211,153,0.14)");
+  // Donut: transparent centre; teal peaks at 50% of sprite radius (~41px) — outside nucleus bloom
+  grd.addColorStop(0,    "rgba(0,0,0,0)");
+  grd.addColorStop(0.28, "rgba(52,211,153,0.03)");
+  grd.addColorStop(0.50, "rgba(52,211,153,0.22)");
+  grd.addColorStop(0.75, "rgba(52,211,153,0.06)");
   grd.addColorStop(1,    "rgba(0,0,0,0)");
   ctx.fillStyle = grd;
   ctx.fillRect(0, 0, size, size);
@@ -298,7 +300,7 @@ export default function NeuronInterior() {
       toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending,
     });
     const haloSprite = new THREE.Sprite(haloMt);
-    haloSprite.scale.set(0.45, 0.45, 1);
+    haloSprite.scale.set(0.60, 0.60, 1);
     mid.add(haloSprite);
     haloSpriteMtRef.current = haloMt;
     toRemove.push(haloSprite);
@@ -567,9 +569,9 @@ export default function NeuronInterior() {
     const br  = Math.min(1, 0.3+Math.abs(z)*0.5);
     const pls = 1+Math.sin(t*2.5+Math.abs(z))*0.18*Math.abs(z);
 
-    // Nucleus: G=1.4 → luminance ≈1.1 → moderate bloom (~80px radius)
+    // Nucleus: tiny sphere → point-source bloom fits inside rim radius
     if (nucleusMtRef.current) {
-      nucleusMtRef.current.color.set(br*pls*0.5, br*pls*1.4, br*pls*0.8);
+      nucleusMtRef.current.color.set(br*pls*0.5, br*pls*1.8, br*pls*0.8);
       nucleusMtRef.current.opacity = op;
     }
     if (nucleusMesh.current) {
@@ -578,9 +580,9 @@ export default function NeuronInterior() {
       );
     }
 
-    // Halo sprite — 0.45 opacity gives visible glow without triggering heavy bloom from the sprite itself
+    // Halo sprite: texture is near-transparent, so high opacity just extends the soft atmospheric haze
     if (haloSpriteMtRef.current) {
-      haloSpriteMtRef.current.opacity = op * 0.45;
+      haloSpriteMtRef.current.opacity = op * 0.85;
     }
 
     // Rim
@@ -594,13 +596,13 @@ export default function NeuronInterior() {
       }
       buf[82*3]=buf[0]; buf[82*3+1]=buf[1]; buf[82*3+2]=0;
       rimAttr.needsUpdate = true;
-      rimMtRef.current.opacity = op * 0.55;
+      rimMtRef.current.opacity = op * 0.70;
     }
 
-    // Arcs
+    // Arcs — high opacity to pop visibly above bloom level at 50-74px
     arcGroupRefs.current.forEach((grp,k) => {
       grp.rotation.z = t * ARC_SPEEDS[k];
-      arcMtRefs.current[k].opacity = op * 0.28;
+      arcMtRefs.current[k].opacity = op * 0.70;
     });
 
     // Motes
@@ -645,7 +647,7 @@ export default function NeuronInterior() {
     }
     if (bgMtRef.current) bgMtRef.current.opacity = op * 0.15;
 
-    // Strands: 0.12 base opacity — visible hairlines on dark bg (was 0.04, too dim)
+    // Strands: barely visible hairlines (0.05 emerald, 0.04 amber) — signal dots carry brightness
     const build = strandBuildRef.current;
     if (build) {
       const { groups, nSamples, trail, sigPosBuf, sigNegBuf, sigPosAttr, sigNegAttr } = build;
@@ -653,7 +655,8 @@ export default function NeuronInterior() {
 
       groups.forEach((strands,gi) => {
         const mt = strandMatsRef.current[gi];
-        if (mt) mt.opacity = op * 0.12; // 3× the old value → visible hairlines
+        const isPos = ((isMobile ? W3 : W5) as readonly number[])[gi] >= 0;
+        if (mt) mt.opacity = op * (isPos ? 0.05 : 0.04); // amber slightly dimmer (perceptually brighter yellow)
 
         strands.forEach(strand => {
           strand.phase = (strand.phase+delta*strand.speed)%1;
@@ -732,7 +735,7 @@ export default function NeuronInterior() {
 
   // Plain-text label style — no box, just a subtle text-shadow for legibility
   const labelStyle: React.CSSProperties = {
-    fontFamily: TERM, fontSize: d(15, 14), color: CREAM2,
+    fontFamily: TERM, fontSize: d(13, 12), color: CREAM2,
     lineHeight: 1.4, whiteSpace: "nowrap",
     pointerEvents: "none", userSelect: "none",
     textShadow: "0 0 10px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.8)",
@@ -757,9 +760,9 @@ export default function NeuronInterior() {
       {/* MID layer */}
       <group ref={midGroupRef}>
 
-        {/* Nucleus: tiny bright sphere — bloom provides compact glow ring */}
+        {/* Nucleus: 7px sphere (0.025wu) — point-source so bloom stays inside 36px rim */}
         <mesh ref={nucleusMesh}>
-          <sphereGeometry args={[0.05, 20, 14]} />
+          <sphereGeometry args={[0.025, 20, 14]} />
           <meshBasicMaterial ref={nucleusMtRef} color={EM_HDR} transparent opacity={0} toneMapped={false} />
         </mesh>
 
@@ -835,7 +838,7 @@ export default function NeuronInterior() {
         {/* TOP-ZONE: z = Σ(w·x) + b — no box, just styled text */}
         <Html position={[d(0.50,0), d(1.10,0.92), 0]} center>
           <div ref={t1aRef} style={{ opacity: 0, textAlign: "center", ...eqStyle }}>
-            <span style={{ fontFamily: SERIF, fontSize: d(42,26), color: CREAM, lineHeight: 1 }}>
+            <span style={{ fontFamily: SERIF, fontSize: d(34,22), color: CREAM, lineHeight: 1 }}>
               <em style={{ color: EM_HEX, fontStyle: "italic" }}>z</em>{" = Σ(w·x) + b"}
             </span>
           </div>
@@ -844,7 +847,7 @@ export default function NeuronInterior() {
         {/* live z — no box */}
         <Html position={[d(0.50,0), d(0.82,0.64), 0]} center>
           <div ref={t2zRef} style={{ opacity: 0, ...eqStyle }}>
-            <span style={{ fontFamily: TERM, fontSize: d(28,18), fontWeight: 700, color: EM_HEX, lineHeight: 1 }}>
+            <span style={{ fontFamily: TERM, fontSize: d(22,14), fontWeight: 700, color: EM_HEX, lineHeight: 1 }}>
               <em style={{ fontStyle: "italic" }}>z</em>{" = "}<span ref={zSpanRef}>···</span>
             </span>
           </div>
@@ -853,7 +856,7 @@ export default function NeuronInterior() {
         {/* b chip */}
         <Html position={[d(0.22,0.18), d(-0.34,-0.28), 0]} center>
           <div ref={t3bRef} style={{ opacity: 0, ...eqStyle }}>
-            <span style={{ fontFamily: TERM, fontSize: d(14,12), color: CREAM3 }}>b = {BIAS}</span>
+            <span style={{ fontFamily: TERM, fontSize: d(13,11), color: CREAM3 }}>b = {BIAS}</span>
           </div>
         </Html>
 
@@ -865,7 +868,7 @@ export default function NeuronInterior() {
         {/* a = GELU(z) */}
         <Html position={[d(1.55,0.30), d(-0.08,-0.12), 0]} center>
           <div ref={t1bRef} style={{ opacity: 0, textAlign: "center", ...eqStyle }}>
-            <span style={{ fontFamily: SERIF, fontSize: d(42,26), color: CREAM, lineHeight: 1 }}>
+            <span style={{ fontFamily: SERIF, fontSize: d(26,18), color: CREAM, lineHeight: 1 }}>
               <em style={{ color: EM_HEX, fontStyle: "italic" }}>a</em>
               {" = GELU("}<em style={{ color: EM_HEX, fontStyle: "italic" }}>z</em>{")"}
             </span>
@@ -875,10 +878,10 @@ export default function NeuronInterior() {
         {/* live a + → NEXT LAYER */}
         <Html position={[d(1.55,0.30), d(-0.42,-0.50), 0]} center>
           <div ref={t2aRef} style={{ opacity: 0, textAlign: "center", ...eqStyle }}>
-            <span style={{ fontFamily: TERM, fontSize: d(28,18), fontWeight: 700, color: EM_HEX, lineHeight: 1, display: "block" }}>
+            <span style={{ fontFamily: TERM, fontSize: d(22,14), fontWeight: 700, color: EM_HEX, lineHeight: 1, display: "block" }}>
               <em style={{ fontStyle: "italic" }}>a</em>{" = "}<span ref={outSpanRef}>···</span>
             </span>
-            <span style={{ fontFamily: MONO, fontSize: d(11,10), letterSpacing: "0.14em",
+            <span style={{ fontFamily: MONO, fontSize: d(10,9), letterSpacing: "0.14em",
               textTransform: "uppercase" as const, color: CREAM3, display: "block", marginTop: 4 }}>
               → NEXT LAYER
             </span>
@@ -888,7 +891,7 @@ export default function NeuronInterior() {
         {/* caption */}
         <Html position={[0, d(-1.38,-1.10), 0]} center>
           <div ref={t5Ref} style={{ opacity: 0, ...eqStyle }}>
-            <span style={{ fontFamily: MONO, fontSize: d(11,10), letterSpacing: "0.14em",
+            <span style={{ fontFamily: MONO, fontSize: d(10,9), letterSpacing: "0.14em",
               textTransform: "uppercase" as const, color: CREAM3 }}>
               INSIDE NEURON 2·07 — HIDDEN LAYER 2
             </span>
@@ -937,7 +940,7 @@ function GeluPanel({
       border: "1px solid rgba(255,230,203,0.12)", borderRadius: 4,
       padding: "5px 7px 4px", pointerEvents: "none",
     }}>
-      <div style={{ fontFamily: "var(--font-mono,monospace)", fontSize: isMobile?11:12,
+      <div style={{ fontFamily: "var(--font-mono,monospace)", fontSize: isMobile?9:10,
         letterSpacing:"0.14em", textTransform:"uppercase" as const,
         color:"rgba(255,230,203,0.48)", marginBottom:4, userSelect:"none" }}>GELU</div>
       <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ display:"block" }}>
