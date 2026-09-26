@@ -1,5 +1,8 @@
 "use client";
 
+import dynamic from "next/dynamic";
+const HUDPanel = dynamic(() => import("@/components/three/stages/HUDPanel"), { ssr: false });
+
 /**
  * ScrollProvider — wraps the app in Lenis smooth scroll + GSAP ScrollTrigger.
  *
@@ -154,6 +157,7 @@ export default function ScrollProvider({ children }: { children: React.ReactNode
     <ReactLenis root options={{ autoRaf: false }} ref={lenisRef}>
       {children}
       {showDebug && <DebugOverlay />}
+      <HUDPanel />
     </ReactLenis>
   );
 }

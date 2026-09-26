@@ -5,10 +5,15 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { nodes, edges, nodeOutEdges, TARGET_NEURON_IDX, TARGET_NEURON_POS } from "@/lib/network";
 import { getSceneState } from "@/components/three/useSceneStore";
+import { setOrbitState } from "@/lib/orbitStore";
+import StageELabels from "@/components/three/stages/StageELabels";
 
-const PULSE_COUNT   = 40;
-const MOBILE_PULSES = 20;
-const NODE_RADIUS   = 0.14;
+// Desktop: 60 during Stage E, 40 otherwise. Mobile: always 24.
+const PULSE_COUNT   = 60; // max — buffer sized to this
+const NORMAL_PULSES = 40; // standard desktop
+const MOBILE_PULSES = 24;
+
+const NODE_RADIUS = 0.14;
 
 const CREAM    = new THREE.Color("#ffe6cb");
 const EM_HDR   = new THREE.Color(0.8, 3.2, 1.4);
@@ -27,9 +32,6 @@ function makePulses(count: number): Pulse[] {
   }));
 }
 
-// Continuous alpha function of totalProgress — never resets at stage boundaries.
-// This is the fix for the B→C jolt: the old code reset alpha to 1.0 when entering
-// Stage C (stageProgress=0), causing a jump from B's 0.22 to 1.0.
 function smoothstepFn(lo: number, hi: number, t: number): number {
   const x = Math.max(0, Math.min(1, (t - lo) / (hi - lo)));
   return x * x * (3 - 2 * x);
@@ -38,7 +40,6 @@ function smoothstepFn(lo: number, hi: number, t: number): number {
 function computeNetworkAlpha(tp: number): number {
   if (tp <= 0.08) return 1.0;
   if (tp <= 0.27) return lerp(1.0, 0.22, smoothstepFn(0.08, 0.27, tp));
-  // Crossfade window: fade to 0.15 (not 0) so faint bg visible inside C
   if (tp <= 0.37) return lerp(0.22, 0.15, smoothstepFn(0.27, 0.37, tp));
   if (tp <= 0.50) return 0.15;
   if (tp <= 0.60) return lerp(0.15, 0.85, smoothstepFn(0.50, 0.60, tp));
@@ -64,8 +65,9 @@ export default function NeuralNetwork() {
     [],
   );
 
-  const activePulseCount = isMobile ? MOBILE_PULSES : PULSE_COUNT;
-  const pulses = useMemo(() => makePulses(activePulseCount), [activePulseCount]);
+  // Always allocate max pulses on desktop so we can ramp up during Stage E
+  const pulsePoolSize = isMobile ? MOBILE_PULSES : PULSE_COUNT;
+  const pulses = useMemo(() => makePulses(pulsePoolSize), [pulsePoolSize]);
 
   const nodeGlow = useMemo(() => new Float32Array(nodes.length), []);
   const pulsePos = useMemo(() => new Float32Array(PULSE_COUNT * 3), []);
@@ -129,12 +131,16 @@ export default function NeuralNetwork() {
     m.x += (m.tx - m.x) * 0.04;
     m.y += (m.ty - m.y) * 0.04;
 
-    // alpha is declared here and set after the switch — never inside cases
     let targetX = 0, targetY = 0, scale = 1;
     let rotY = 0, rotX = 0;
 
     const idleRotY = t * 0.12 + m.x * 0.8;
     const idleRotX = -0.25 + m.y * 0.5 + Math.sin(t * 0.2) * 0.08;
+
+    // During Stage E, use more pulses to fill the fully-visible network
+    const activePulseCount = isMobile
+      ? MOBILE_PULSES
+      : (stage === "E" ? PULSE_COUNT : NORMAL_PULSES);
 
     switch (stage) {
       case "A":
@@ -157,7 +163,6 @@ export default function NeuralNetwork() {
           nodeGlow[TARGET_NEURON_IDX],
           easeOut(sp) * 0.85 + 0.15,
         );
-
         break;
       }
 
@@ -172,6 +177,8 @@ export default function NeuralNetwork() {
         break;
 
       case "E":
+        // Group stays centred; CameraRig handles the orbit.
+        // Idle rotation is paused so the camera movement provides all the motion.
         targetX = 0; targetY = 0; scale = 1.0;
         rotY = 0; rotX = 0;
         break;
@@ -188,11 +195,9 @@ export default function NeuralNetwork() {
       }
     }
 
-    // Alpha from totalProgress — continuous across all stage boundaries
     let alpha = computeNetworkAlpha(totalProgress);
     if (stage === "A" && isMobile) alpha = 0.55;
 
-    // Membrane veil: back-face sphere — fades in as camera approaches, peaks inside C
     const memMat = membraneMatRef.current;
     if (memMat) {
       const tp = totalProgress;
@@ -203,8 +208,6 @@ export default function NeuralNetwork() {
       memMat.opacity = memOp;
     }
 
-    // Ring: driven by totalProgress so it never snaps at the B→C stage boundary.
-    // Fades in as camera approaches (tp 0.08→0.35), then smoothsteps out (tp 0.35→0.42).
     {
       const ring    = ringRef.current;
       const ringMat = ringMatRef.current;
@@ -243,6 +246,7 @@ export default function NeuralNetwork() {
 
     if (alpha < 0.01 || reducedMotion) return;
 
+    let livePulses = 0;
     for (let pi = 0; pi < activePulseCount; pi++) {
       const pulse = pulses[pi];
       pulse.progress += delta * pulse.speed;
@@ -267,11 +271,16 @@ export default function NeuralNetwork() {
       pulsePos[b]     = e.fromPos[0] + (e.toPos[0] - e.fromPos[0]) * p;
       pulsePos[b + 1] = e.fromPos[1] + (e.toPos[1] - e.fromPos[1]) * p;
       pulsePos[b + 2] = e.fromPos[2] + (e.toPos[2] - e.fromPos[2]) * p;
+      livePulses++;
     }
+    // Park unused pulse slots far off-screen
     for (let pi = activePulseCount; pi < PULSE_COUNT; pi++) {
       pulsePos[pi * 3] = pulsePos[pi * 3 + 1] = pulsePos[pi * 3 + 2] = 1e6;
     }
     (pulseGeo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+
+    // Publish active pulse count to HUDPanel (during Stage E only)
+    if (stage === "E") setOrbitState({ activePulses: livePulses });
 
     let anyChanged = false;
     for (let ni = 0; ni < nodes.length; ni++) {
@@ -303,12 +312,7 @@ export default function NeuralNetwork() {
       {/* 60 node spheres — one instanced draw call */}
       <instancedMesh ref={meshRef} args={[undefined, undefined, nodes.length]}>
         <sphereGeometry args={[NODE_RADIUS, 10, 8]} />
-        <meshBasicMaterial
-          ref={nodeMatRef}
-          vertexColors
-          transparent
-          toneMapped={false}
-        />
+        <meshBasicMaterial ref={nodeMatRef} vertexColors transparent toneMapped={false} />
       </instancedMesh>
 
       {/* ~250 edges */}
@@ -347,8 +351,7 @@ export default function NeuralNetwork() {
         />
       </mesh>
 
-      {/* Translucent membrane — back-face only so the camera passes through a soft emerald veil.
-          depthWrite:false prevents z-fighting with interior geometry. */}
+      {/* Membrane: back-face sphere — soft emerald veil as camera enters neuron */}
       <mesh position={[tnX, tnY, tnZ]}>
         <sphereGeometry args={[0.22, 20, 14]} />
         <meshBasicMaterial
@@ -361,6 +364,9 @@ export default function NeuralNetwork() {
           toneMapped={false}
         />
       </mesh>
+
+      {/* Stage E: layer name labels floating above each layer */}
+      <StageELabels isMobile={isMobile} />
     </group>
   );
 }
