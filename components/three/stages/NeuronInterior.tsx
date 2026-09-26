@@ -3,14 +3,15 @@
 /**
  * NeuronInterior — Stage C. Volumetric 3D neuron with wandering input strands.
  *
- * Each input (x₁…x₅) arrives via a wide fan of individual wandering strands.
- * Strands are nearly invisible (opacity ~0.04); the light lives in HDR signal
- * particles (3 trail points) that travel along each strand's baked path.
- *
- * Fan: 5 inputs spread across 105°–255° (left hemisphere only).
- * Strand count ∝ |w|: ~7 + |w|×16 strands per input.
- * Seeded PRNG (1337) → identical geometry for every visitor.
- * Parallax: three sub-groups rotate at 0.4× / 1× / 1.8× → real depth.
+ * Layout zones (world units, camera at z = tnZ + 4, fov = 45):
+ *   Top-center  : z=Σ(w·x)+b equation  [-0.30, 1.30, 0]
+ *                 live z directly below [-0.30, 1.02, 0]
+ *   Center      : nucleus + shells + rim + arcs + motes + ripples
+ *                 b chip just below     [0.22, -0.34, 0]
+ *   Right column: GELU panel [1.55, 0.52], a=GELU(z) [1.55, -0.08],
+ *                 live a + →NEXT LAYER  [1.55, -0.42]
+ *   Left fan    : single-line labels  x₃  0.88   w +0.88  (Courier Prime 15px)
+ *   Bottom      : caption             [0, -1.38, 0]
  */
 
 import { useRef, useMemo, useEffect } from "react";
@@ -20,7 +21,7 @@ import * as THREE from "three";
 import { getSceneState } from "@/components/three/useSceneStore";
 import { TARGET_NEURON_POS } from "@/lib/network";
 
-// ── Neuron math ───────────────────────────────────────────────────────────────
+// ── Neuron math ────────────────────────────────────────────────────────────────
 
 const W5   = [0.42, -0.17, 0.88, 0.05, -0.63] as const;
 const W3   = [0.42, 0.88, -0.63] as const;
@@ -31,7 +32,7 @@ function gelu(x: number): number {
   return 0.5 * x * (1 + Math.tanh(c * (x + 0.044715 * x ** 3)));
 }
 
-// ── Seeded LCG PRNG — resetSeed() before each build → same shape every visit ─
+// ── Seeded LCG PRNG — resetSeed() before each build → identical geometry per visit
 
 let _seed = 1337;
 function _R(a: number, b: number): number {
@@ -40,25 +41,37 @@ function _R(a: number, b: number): number {
 }
 function resetSeed() { _seed = 1337; }
 
-// ── Layout constants ──────────────────────────────────────────────────────────
+// ── Layout ─────────────────────────────────────────────────────────────────────
 
 const INPUT_X      = -1.60;
 const INPUT_X_MOB  = -0.50;
 const OUTPUT_X     = +1.80;
 const OUTPUT_X_MOB = +0.60;
 
-// Fan: A0 = π*(1−0.46*0.92) ≈ 1.812 rad (≈105°), A1 ≈ 4.471 rad (≈256°)
+// Fan: A0 ≈ 105°, A1 ≈ 256° — left hemisphere only
 const FAN_A0 = Math.PI * (1 - 0.46 * 0.92);
 const FAN_A1 = Math.PI * (1 + 0.46 * 0.92);
 
-// Background neighbour neuron positions (local offset from core)
 const BG_POS: [number, number, number][] = [
   [-2.4,  0.9, -3.0], [-1.9, -1.1, -3.6], [ 2.1,  0.7, -2.9],
   [ 1.6, -0.9, -4.1], [-2.9,  0.2, -3.8], [ 0.9,  1.6, -3.3],
   [-1.1,  1.9, -4.3], [ 2.7, -0.5, -3.7],
 ];
 
-// ── Three.js constants ────────────────────────────────────────────────────────
+// ── Core decoration constants (world units, scaled: nucleus 0.12wu ↔ 19px ref) ──
+
+const BASE_RIM   = 0.227;   // noisy rim base radius
+const RIM_AMP1   = 0.014;   // sin(3θ) noise amplitude
+const RIM_AMP2   = 0.009;   // sin(7θ) noise amplitude
+const ARC_RADII  = [0.316, 0.392, 0.467] as const;
+const ARC_SPEEDS = [0.40,  0.65,  0.90]  as const;
+const MOTE_R     = 0.367;
+const MOTE_VAR   = 0.076;
+const RIPPLE_R0  = 0.214;
+const RIPPLE_DR  = 0.12;
+const RIPPLE_DUR = 0.6;
+
+// ── Three.js constants ─────────────────────────────────────────────────────────
 
 const EM_HDR    = new THREE.Color(0.8, 3.2, 1.4);
 const AMBER_HDR = new THREE.Color(1.0, 0.74, 0.22);
@@ -71,7 +84,7 @@ const _tmpVec = new THREE.Vector3();
 const _obj    = new THREE.Object3D();
 const _col    = new THREE.Color();
 
-// ── Strand types ──────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────────
 
 interface StrandData {
   path:       Float32Array; // N_SAMPLES * 3 baked XYZ
@@ -90,7 +103,7 @@ interface StrandBuild {
   sigNegAttr: THREE.BufferAttribute;
 }
 
-// ── Style tokens ──────────────────────────────────────────────────────────────
+// ── Style tokens ───────────────────────────────────────────────────────────────
 
 const BD: React.CSSProperties = {
   background: "rgba(4,28,28,0.78)", backdropFilter: "blur(4px)",
@@ -104,7 +117,7 @@ const CREAM  = "rgba(255,230,203,0.92)";
 const CREAM2 = "rgba(255,230,203,0.66)";
 const CREAM3 = "rgba(255,230,203,0.38)";
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Component ──────────────────────────────────────────────────────────────────
 
 export default function NeuronInterior() {
   const groupRef    = useRef<THREE.Group>(null);
@@ -112,18 +125,31 @@ export default function NeuronInterior() {
   const midGroupRef = useRef<THREE.Group>(null);
   const fgGroupRef  = useRef<THREE.Group>(null);
 
-  // Core
+  // Core shells + nucleus
   const nucleusMesh  = useRef<THREE.Mesh>(null);
   const nucleusMtRef = useRef<THREE.MeshBasicMaterial>(null);
   const shell1MtRef  = useRef<THREE.MeshBasicMaterial>(null);
   const shell2MtRef  = useRef<THREE.MeshBasicMaterial>(null);
   const shell3MtRef  = useRef<THREE.MeshBasicMaterial>(null);
 
+  // Core decorations (all imperative — avoid JSX <line> SVG conflict)
+  const rimAttrRef     = useRef<THREE.BufferAttribute | null>(null);
+  const rimBufRef      = useRef(new Float32Array(83 * 3));
+  const rimMtRef       = useRef<THREE.LineBasicMaterial | null>(null);
+  const arcGroupRefs   = useRef<THREE.Group[]>([]);
+  const arcMtRefs      = useRef<THREE.LineBasicMaterial[]>([]);
+  const moteBufRef     = useRef(new Float32Array(9 * 3));
+  const moteAttrRef    = useRef<THREE.BufferAttribute | null>(null);
+  const moteMtRef      = useRef<THREE.PointsMaterial | null>(null);
+  const rippleAttrRefs = useRef<THREE.BufferAttribute[]>([]);
+  const rippleMtRefs   = useRef<THREE.LineBasicMaterial[]>([]);
+  const rippleStartRef = useRef([0, 1.1, 2.2, 3.3]); // staggered fire times
+
   // BG neurons
   const bgMeshRef = useRef<THREE.InstancedMesh>(null);
   const bgMtRef   = useRef<THREE.MeshBasicMaterial>(null);
 
-  // Strand line segments (created imperatively in useEffect → no JSX <line>)
+  // Strand line segments (imperative per-group)
   const strandSegsRef = useRef<THREE.LineSegments[]>([]);
   const strandMatsRef = useRef<THREE.LineBasicMaterial[]>([]);
 
@@ -143,19 +169,19 @@ export default function NeuronInterior() {
   // Foreground dust
   const ptDustRef = useRef<THREE.PointsMaterial>(null);
 
-  // HTML tiers
-  const t1aRef     = useRef<HTMLDivElement>(null);
-  const t1bRef     = useRef<HTMLDivElement>(null);
-  const t2zRef     = useRef<HTMLDivElement>(null);
-  const t2aRef     = useRef<HTMLDivElement>(null);
-  const t3bRef     = useRef<HTMLDivElement>(null);
-  const inputRefs  = useRef<(HTMLDivElement | null)[]>([]);
-  const t5Ref      = useRef<HTMLDivElement>(null);
-  const zSpanRef   = useRef<HTMLSpanElement>(null);
-  const outSpanRef = useRef<HTMLSpanElement>(null);
-  const dotRef     = useRef<SVGCircleElement>(null);
+  // HTML refs
+  const t1aRef       = useRef<HTMLDivElement>(null);   // z = Σ(w·x) + b equation
+  const t1bRef       = useRef<HTMLDivElement>(null);   // a = GELU(z) equation
+  const t2zRef       = useRef<HTMLDivElement>(null);   // live z
+  const t2aRef       = useRef<HTMLDivElement>(null);   // live a + next layer
+  const t3bRef       = useRef<HTMLDivElement>(null);   // bias chip
+  const inputRefs    = useRef<(HTMLDivElement | null)[]>([]);
+  const inputValRefs = useRef<(HTMLSpanElement | null)[]>([]); // live xᵢ values
+  const t5Ref        = useRef<HTMLDivElement>(null);   // caption
+  const zSpanRef     = useRef<HTMLSpanElement>(null);
+  const outSpanRef   = useRef<HTMLSpanElement>(null);
+  const dotRef       = useRef<SVGCircleElement>(null);
 
-  // Built strand data
   const strandBuildRef = useRef<StrandBuild | null>(null);
 
   const { size } = useThree();
@@ -164,15 +190,8 @@ export default function NeuronInterior() {
   const n        = weights.length;
   const inX      = isMobile ? INPUT_X_MOB : INPUT_X;
   const outX     = isMobile ? OUTPUT_X_MOB : OUTPUT_X;
-  const yHalf    = isMobile ? 0.70 : 1.20;
 
-  const inputYs = useMemo(
-    () => Array.from({ length: n }, (_, i) =>
-      n <= 1 ? 0 : yHalf - (i / (n - 1)) * yHalf * 2),
-    [n, yHalf],
-  );
-
-  // ── Axon curve ────────────────────────────────────────────────────────────
+  // ── Axon curve ─────────────────────────────────────────────────────────────
   const axonCurve = useMemo(() => new THREE.CatmullRomCurve3([
     new THREE.Vector3(0,           0,     0),
     new THREE.Vector3(outX * 0.40, 0.12, -0.35),
@@ -189,21 +208,21 @@ export default function NeuronInterior() {
     return geo;
   }, []);
 
-  // ── Foreground dust ───────────────────────────────────────────────────────
-  const DUST   = isMobile ? 60 : 180;
+  // ── Foreground dust ─────────────────────────────────────────────────────────
+  const DUST    = isMobile ? 60 : 180;
   const dustGeo = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     const pos = new Float32Array(DUST * 3);
     for (let i = 0; i < DUST; i++) {
       pos[i*3]   = (Math.random() - 0.5) * 5.5;
       pos[i*3+1] = (Math.random() - 0.5) * 3.5;
-      pos[i*3+2] = Math.random() * 0.8 + 1.2; // z +1.2→+2.0, in front of core
+      pos[i*3+2] = Math.random() * 0.8 + 1.2;
     }
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     return geo;
   }, [DUST]);
 
-  // ── Mouse parallax ────────────────────────────────────────────────────────
+  // ── Mouse parallax ──────────────────────────────────────────────────────────
   const mouse = useRef({ x: 0, y: 0 });
   useEffect(() => {
     if (isMobile) return;
@@ -215,7 +234,7 @@ export default function NeuronInterior() {
     return () => window.removeEventListener("mousemove", fn);
   }, [isMobile]);
 
-  // ── Init BG neuron instances ───────────────────────────────────────────────
+  // ── Init BG neuron instances ────────────────────────────────────────────────
   useEffect(() => {
     const mesh = bgMeshRef.current;
     if (!mesh) return;
@@ -231,7 +250,100 @@ export default function NeuronInterior() {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }, []);
 
-  // ── Build strand geometry (imperative — avoids JSX <line> type conflicts) ──
+  // ── Core decorations: rim, arcs, motes, ripples (all imperative THREE.Line) ──
+  useEffect(() => {
+    const mid = midGroupRef.current;
+    if (!mid) return;
+
+    const toDispose: { geo: THREE.BufferGeometry; mt: THREE.Material }[] = [];
+    const toRemove: THREE.Object3D[] = [];
+
+    // 1. Noisy breathing rim (82-point closed loop)
+    const rimBuf  = rimBufRef.current;
+    const rimGeo  = new THREE.BufferGeometry();
+    const rimAttr = new THREE.BufferAttribute(rimBuf, 3);
+    rimAttr.setUsage(THREE.DynamicDrawUsage);
+    rimGeo.setAttribute("position", rimAttr);
+    rimGeo.setDrawRange(0, 83);
+    const rimMt   = new THREE.LineBasicMaterial({ color: EM_HEX, transparent: true, opacity: 0, toneMapped: false });
+    const rimLine = new THREE.Line(rimGeo, rimMt);
+    mid.add(rimLine);
+    rimAttrRef.current = rimAttr;
+    rimMtRef.current   = rimMt;
+    toDispose.push({ geo: rimGeo, mt: rimMt });
+    toRemove.push(rimLine);
+
+    // 2. Three rotating arcs — partial circles (270°), 37 points each
+    const arcGroups: THREE.Group[] = [];
+    const arcMts:    THREE.LineBasicMaterial[] = [];
+    ARC_RADII.forEach(r => {
+      const PTS  = 36;
+      const pos  = new Float32Array((PTS + 1) * 3);
+      for (let k = 0; k <= PTS; k++) {
+        const th   = (k / PTS) * Math.PI * 1.5; // 270°
+        pos[k*3]   = Math.cos(th) * r;
+        pos[k*3+1] = Math.sin(th) * r;
+        pos[k*3+2] = 0;
+      }
+      const geo  = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      geo.setDrawRange(0, PTS + 1);
+      const mt   = new THREE.LineBasicMaterial({ color: EM_HEX, transparent: true, opacity: 0, toneMapped: false });
+      const line = new THREE.Line(geo, mt);
+      const grp  = new THREE.Group();
+      grp.add(line);
+      mid.add(grp);
+      arcGroups.push(grp);
+      arcMts.push(mt);
+      toDispose.push({ geo, mt });
+      toRemove.push(grp);
+    });
+    arcGroupRefs.current = arcGroups;
+    arcMtRefs.current    = arcMts;
+
+    // 3. Nine orbiting motes
+    const moteBuf  = moteBufRef.current;
+    const moteGeo  = new THREE.BufferGeometry();
+    const moteAttr = new THREE.BufferAttribute(moteBuf, 3);
+    moteAttr.setUsage(THREE.DynamicDrawUsage);
+    moteGeo.setAttribute("position", moteAttr);
+    const moteMt  = new THREE.PointsMaterial({ color: EM_HDR, size: 0.020, sizeAttenuation: true, transparent: true, opacity: 0, toneMapped: false });
+    const motePts = new THREE.Points(moteGeo, moteMt);
+    mid.add(motePts);
+    moteAttrRef.current = moteAttr;
+    moteMtRef.current   = moteMt;
+    toDispose.push({ geo: moteGeo, mt: moteMt });
+    toRemove.push(motePts);
+
+    // 4. Ripple ring pool (4 rings, 24-point circles)
+    const rippleAttrs: THREE.BufferAttribute[] = [];
+    const rippleMts:   THREE.LineBasicMaterial[] = [];
+    for (let ri = 0; ri < 4; ri++) {
+      const PTS  = 24;
+      const buf  = new Float32Array((PTS + 1) * 3);
+      const geo  = new THREE.BufferGeometry();
+      const attr = new THREE.BufferAttribute(buf, 3);
+      attr.setUsage(THREE.DynamicDrawUsage);
+      geo.setAttribute("position", attr);
+      geo.setDrawRange(0, PTS + 1);
+      const mt   = new THREE.LineBasicMaterial({ color: EM_HEX, transparent: true, opacity: 0, toneMapped: false });
+      const line = new THREE.Line(geo, mt);
+      mid.add(line);
+      rippleAttrs.push(attr);
+      rippleMts.push(mt);
+      toDispose.push({ geo, mt });
+      toRemove.push(line);
+    }
+    rippleAttrRefs.current = rippleAttrs;
+    rippleMtRefs.current   = rippleMts;
+
+    return () => {
+      toRemove.forEach(o => mid.remove(o));
+      toDispose.forEach(({ geo, mt }) => { geo.dispose(); mt.dispose(); });
+    };
+  }, []); // decorations are in world units — no isMobile dependency
+
+  // ── Build strand geometry ───────────────────────────────────────────────────
   useEffect(() => {
     const mid = midGroupRef.current;
     if (!mid) return;
@@ -248,11 +360,11 @@ export default function NeuronInterior() {
 
     resetSeed();
 
-    const N  = isMobile ? 28 : 46;  // samples per strand
-    const TR = isMobile ? 2  : 3;   // trail points per signal
+    const N  = isMobile ? 28 : 46; // baked samples per strand
+    const TR = isMobile ? 2  : 3;  // signal trail points
 
     const angleStep = n > 1 ? (FAN_A1 - FAN_A0) / (n - 1) : 0;
-    const D_base    = Math.abs(inX) * 1.05; // fan radius in world units
+    const D_base    = Math.abs(inX) * 1.05;
 
     const groups: StrandData[][] = [];
     let posCapacity = 0;
@@ -262,13 +374,14 @@ export default function NeuronInterior() {
       const w      = (weights as readonly number[])[gi];
       const isPos  = w >= 0;
       const baseAng = FAN_A0 + angleStep * gi;
+      // Strand count proportional to |w|: x₁=14, x₂=10, x₃=21, x₄=8, x₅=17
       const nSt    = Math.round((7 + Math.abs(w) * 16) * (isMobile ? 0.40 : 1.0));
-      const hw     = 0.12 + Math.abs(w) * 0.11; // angular half-width
+      const hw     = 0.12 + Math.abs(w) * 0.11; // angular half-width per input
 
-      // LineSegments geometry: (N-1) segments × 2 verts per strand = (N-1)*2*nSt
-      const geoVerts = nSt * (N - 1) * 2;
-      const positions = new Float32Array(geoVerts * 3);
-      let vOff = 0;
+      // LineSegments: (N-1) segments × 2 verts per strand
+      const nVerts    = nSt * (N - 1) * 2;
+      const positions = new Float32Array(nVerts * 3);
+      let   vOff      = 0;
 
       const strands: StrandData[] = [];
 
@@ -276,70 +389,63 @@ export default function NeuronInterior() {
         const ang = baseAng + _R(-hw, hw);
         const dk  = D_base * _R(0.62, 1.3);
 
-        // Strand origin (left hemisphere, spread in Z for depth)
         const sx = Math.cos(ang) * dk;
-        const sy = -Math.sin(ang) * dk; // flip Y (Three.js +Y = up)
+        const sy = -Math.sin(ang) * dk; // +Y is up in Three.js
         const sz = _R(-0.30, 0.30);
 
-        // Dock near core
         const dockR = _R(0.20, 0.28);
         const ex    = Math.cos(ang) * dockR;
         const ey    = -Math.sin(ang) * dockR;
-        const ez    = sz * 0.05;
+        const ez    = sz * 0.05; // dock nearly flat at core
 
-        // Bow perpendicular to main direction
+        // Perpendicular bow so strands don't all follow the same line
         const bw  = _R(-1, 1) * dk * _R(0.03, 0.09);
-        const pnx = -Math.sin(ang); // perpendicular
+        const pnx = -Math.sin(ang);
         const pny = -Math.cos(ang);
 
-        // Bezier control points
         const p0 = [sx, sy, sz];
         const p1 = [Math.min(sx*0.6+ex*0.4+pnx*bw, -0.28), sy*0.6+ey*0.4+pny*bw, sz*0.7];
         const p2 = [Math.min(sx*0.3+ex*0.7+pnx*bw*0.4, -0.10), sy*0.3+ey*0.7+pny*bw*0.4, sz*0.3];
         const p3 = [ex, ey, ez];
 
-        // Wander params (world units; scaled from reference px values)
+        // Two-frequency wander + slow wobble (world units)
         const n1 = { a: _R(-0.14, 0.14), f: _R(1.0, 3.2), p: _R(0, Math.PI*2) };
         const n2 = { a: _R(-0.06, 0.06), f: _R(2.6, 6.5), p: _R(0, Math.PI*2) };
         const wph = _R(0, Math.PI*2);
-        const wfr = _R(0.5, 1.5);
         const wam = _R(0.012, 0.035);
 
-        // Bake N samples along the bezier + wander
+        // Bake N samples along the bezier + wander into the path buffer
         const path = new Float32Array(N * 3);
         for (let s = 0; s < N; s++) {
           const t = s / (N - 1);
           const u = 1 - t;
 
-          // Cubic bezier position
           const bpx = u*u*u*p0[0] + 3*u*u*t*p1[0] + 3*u*t*t*p2[0] + t*t*t*p3[0];
           const bpy = u*u*u*p0[1] + 3*u*u*t*p1[1] + 3*u*t*t*p2[1] + t*t*t*p3[1];
           const bpz = u*u*u*p0[2] + 3*u*u*t*p1[2] + 3*u*t*t*p2[2] + t*t*t*p3[2];
 
-          // Tangent → normal (perpendicular in XY)
+          // Bezier tangent → XY normal for wander direction
           const dbx = 3*(u*u*(p1[0]-p0[0]) + 2*u*t*(p2[0]-p1[0]) + t*t*(p3[0]-p2[0]));
           const dby = 3*(u*u*(p1[1]-p0[1]) + 2*u*t*(p2[1]-p1[1]) + t*t*(p3[1]-p2[1]));
           const dbl = Math.sqrt(dbx*dbx + dby*dby) || 1;
           const tnx = -dby / dbl;
           const tny =  dbx / dbl;
 
-          // Taper: full wander far out, zero at core
-          const taper = Math.pow(Math.sin(t * Math.PI), 0.8) * 0.92 + 0.08 * (1 - t);
-          const woff  = Math.sin(t*n1.f*3.1+n1.p)*n1.a + Math.sin(t*n2.f*3.1+n2.p)*n2.a;
-          const wob   = Math.sin(wph + t*6) * wam;
+          // Taper to zero at core (t → 1), full wander at midpoint
+          const taper  = Math.pow(Math.sin(t * Math.PI), 0.8) * 0.92 + 0.08 * (1 - t);
+          const woff   = Math.sin(t*n1.f*3.1+n1.p)*n1.a + Math.sin(t*n2.f*3.1+n2.p)*n2.a;
+          const wob    = Math.sin(wph + t*6) * wam;
           const offset = (woff + wob) * taper;
 
           path[s*3]   = bpx + tnx * offset;
           path[s*3+1] = bpy + tny * offset;
           path[s*3+2] = bpz + tnx * offset * 0.3;
 
-          // Also write into LineSegments geometry (pairs of segment endpoints)
+          // Write segment pair into LineSegments position buffer
           if (s > 0) {
-            // start of segment = previous point
             positions[vOff++] = path[(s-1)*3];
             positions[vOff++] = path[(s-1)*3+1];
             positions[vOff++] = path[(s-1)*3+2];
-            // end of segment = current point
             positions[vOff++] = path[s*3];
             positions[vOff++] = path[s*3+1];
             positions[vOff++] = path[s*3+2];
@@ -358,14 +464,15 @@ export default function NeuronInterior() {
       else       negCapacity += nSt * TR;
       groups.push(strands);
 
-      // Create Three.js LineSegments for this input
+      // ONE LineSegments draw call per input group — use slice() not subarray()
+      // to give Three.js an independent copy of the buffer
       const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.BufferAttribute(positions.subarray(0, vOff), 3));
+      geo.setAttribute("position", new THREE.BufferAttribute(positions.slice(0, vOff), 3));
       const mat = new THREE.LineBasicMaterial({
-        color:       isPos ? EM_HEX : AMBER_HEX,
+        color:      isPos ? EM_HEX : AMBER_HEX,
         transparent: true,
-        opacity:     0,
-        toneMapped:  false,
+        opacity:    0,   // driven to 0.04 in useFrame
+        toneMapped: false,
       });
       const seg = new THREE.LineSegments(geo, mat);
       mid.add(seg);
@@ -373,7 +480,7 @@ export default function NeuronInterior() {
       strandMatsRef.current.push(mat);
     }
 
-    // Signal particle buffers
+    // Signal particle buffers (emerald = positive weights, amber = negative)
     const sigPosBuf  = new Float32Array(Math.max(posCapacity, 1) * 3).fill(1e6);
     const sigNegBuf  = new Float32Array(Math.max(negCapacity, 1) * 3).fill(1e6);
     const sigPosAttr = new THREE.BufferAttribute(sigPosBuf, 3);
@@ -393,10 +500,9 @@ export default function NeuronInterior() {
         (seg.material as THREE.Material).dispose();
       });
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMobile]);
+  }, [isMobile]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Main loop ─────────────────────────────────────────────────────────────
+  // ── Main render loop ────────────────────────────────────────────────────────
   const opRef = useRef(0);
 
   useFrame((state, delta) => {
@@ -404,15 +510,11 @@ export default function NeuronInterior() {
     const g = groupRef.current;
     if (!g) return;
 
-    // Smoothstep crossfade: fade in 0.30→0.37, hold 0.37→0.50, fade out 0.50→0.57
+    // Smoothstep crossfade: fade in 0.30→0.37, hold, fade out 0.50→0.57
     let target = 0;
-    if (tp >= 0.30 && tp < 0.37) {
-      const x = (tp - 0.30) / 0.07; target = x * x * (3 - 2 * x);
-    } else if (tp >= 0.37 && tp < 0.50) {
-      target = 1.0;
-    } else if (tp >= 0.50 && tp < 0.57) {
-      const x = (tp - 0.50) / 0.07; target = 1.0 - x * x * (3 - 2 * x);
-    }
+    if      (tp >= 0.30 && tp < 0.37) { const x = (tp-0.30)/0.07; target = x*x*(3-2*x); }
+    else if (tp >= 0.37 && tp < 0.50) { target = 1.0; }
+    else if (tp >= 0.50 && tp < 0.57) { const x = (tp-0.50)/0.07; target = 1.0-x*x*(3-2*x); }
     opRef.current += (target - opRef.current) * 0.12;
     const op = opRef.current;
     g.visible = op > 0.01;
@@ -422,14 +524,14 @@ export default function NeuronInterior() {
     const mx = mouse.current.x;
     const my = mouse.current.y;
 
-    // Parallax: each layer rotates at a different fraction — creates real depth
-    const baseY = Math.sin(t * 0.09) * 0.18 + mx * 0.10;
-    const baseX = Math.sin(t * 0.06) * 0.10 + my * -0.06;
-    if (bgGroupRef.current)  { bgGroupRef.current.rotation.y  = baseY * 0.40; bgGroupRef.current.rotation.x  = baseX * 0.40; }
-    if (midGroupRef.current) { midGroupRef.current.rotation.y = baseY;        midGroupRef.current.rotation.x = baseX; }
-    if (fgGroupRef.current)  { fgGroupRef.current.rotation.y  = baseY * 1.80; fgGroupRef.current.rotation.x  = baseX * 1.80; }
+    // Parallax: three layers at 0.4× / 1× / 1.8× → visible depth
+    const baseY = Math.sin(t*0.09)*0.18 + mx*0.10;
+    const baseX = Math.sin(t*0.06)*0.10 + my*-0.06;
+    if (bgGroupRef.current)  { bgGroupRef.current.rotation.y  = baseY*0.40; bgGroupRef.current.rotation.x  = baseX*0.40; }
+    if (midGroupRef.current) { midGroupRef.current.rotation.y = baseY;       midGroupRef.current.rotation.x = baseX; }
+    if (fgGroupRef.current)  { fgGroupRef.current.rotation.y  = baseY*1.80; fgGroupRef.current.rotation.x  = baseX*1.80; }
 
-    // Live neuron math
+    // Live neuron math — slow oscillation to visualise changing inputs
     const inputs = (weights as readonly number[]).map((_, i) =>
       0.5 + 0.35 * Math.sin(t * 0.22 + i * 1.5));
     const z   = (weights as readonly number[]).reduce((s, w, i) => s + w * inputs[i], BIAS);
@@ -437,44 +539,104 @@ export default function NeuronInterior() {
     const br  = Math.min(1, 0.3 + Math.abs(z) * 0.5);
     const pls = 1 + Math.sin(t * 2.5 + Math.abs(z)) * 0.18 * Math.abs(z);
 
-    // Core
+    // Core: nucleus + shells
     if (nucleusMtRef.current) {
       nucleusMtRef.current.color.set(br*pls*0.8, br*pls*3.2, br*pls*1.4);
       nucleusMtRef.current.opacity = op;
     }
     if (nucleusMesh.current) {
       nucleusMesh.current.scale.set(
-        1 + 0.05 * Math.sin(t * 1.30),
-        1 + 0.04 * Math.sin(t * 1.00 + 1.1),
-        1 + 0.06 * Math.sin(t * 1.60 - 0.7),
+        1 + 0.05*Math.sin(t*1.30),
+        1 + 0.04*Math.sin(t*1.00+1.1),
+        1 + 0.06*Math.sin(t*1.60-0.7),
       );
     }
     if (shell1MtRef.current) shell1MtRef.current.opacity = op * 0.20;
     if (shell2MtRef.current) shell2MtRef.current.opacity = op * 0.10;
     if (shell3MtRef.current) shell3MtRef.current.opacity = op * 0.05;
 
-    // BG neurons: slow glow pulse
+    // Noisy breathing rim (82-point loop, closed at index 82)
+    const rimAttr = rimAttrRef.current;
+    if (rimAttr && rimMtRef.current) {
+      const buf = rimBufRef.current;
+      for (let k = 0; k < 82; k++) {
+        const th = (k / 82) * Math.PI * 2;
+        const rr = BASE_RIM
+          + Math.sin(th*3 + t*1.3)*RIM_AMP1
+          + Math.sin(th*7 - t*0.9)*RIM_AMP2
+          + pls * 0.005; // breathe with nucleus pulse
+        buf[k*3]   = Math.cos(th) * rr;
+        buf[k*3+1] = Math.sin(th) * rr;
+        buf[k*3+2] = 0;
+      }
+      buf[82*3] = buf[0]; buf[82*3+1] = buf[1]; buf[82*3+2] = 0; // close loop
+      rimAttr.needsUpdate = true;
+      rimMtRef.current.opacity = op * 0.55;
+    }
+
+    // Rotating arcs (each arc spins at its own speed)
+    arcGroupRefs.current.forEach((grp, k) => {
+      grp.rotation.z = t * ARC_SPEEDS[k];
+      arcMtRefs.current[k].opacity = op * 0.28;
+    });
+
+    // Nine orbiting motes
+    const moteAttr = moteAttrRef.current;
+    if (moteAttr && moteMtRef.current) {
+      const buf = moteBufRef.current;
+      for (let k = 0; k < 9; k++) {
+        const th = t * (0.5 + k*0.08) + k * 0.7;
+        const rr = MOTE_R + Math.sin(t*1.1+k) * MOTE_VAR;
+        buf[k*3]   = Math.cos(th) * rr;
+        buf[k*3+1] = Math.sin(th) * rr;
+        buf[k*3+2] = Math.sin(t*0.7+k*1.3) * 0.05;
+      }
+      moteAttr.needsUpdate = true;
+      moteMtRef.current.opacity = op * 0.80;
+    }
+
+    // Ripple rings — time-staggered, grow outward, fade
+    rippleAttrRefs.current.forEach((attr, ri) => {
+      const period = RIPPLE_DUR * 4.5;
+      const age    = ((t - rippleStartRef.current[ri]) % period + period) % period;
+      if (age < RIPPLE_DUR) {
+        const phase = age / RIPPLE_DUR;
+        const r     = RIPPLE_R0 + phase * RIPPLE_DR;
+        const buf   = attr.array as Float32Array;
+        for (let k = 0; k <= 24; k++) {
+          const th    = (k / 24) * Math.PI * 2;
+          buf[k*3]   = Math.cos(th) * r;
+          buf[k*3+1] = Math.sin(th) * r;
+          buf[k*3+2] = 0;
+        }
+        attr.needsUpdate = true;
+        rippleMtRefs.current[ri].opacity = op * 0.45 * (1 - phase);
+      } else {
+        rippleMtRefs.current[ri].opacity = 0;
+      }
+    });
+
+    // BG neurons glow pulse
     const bgMesh = bgMeshRef.current;
     if (bgMesh) {
       for (let i = 0; i < BG_POS.length; i++) {
-        const pulse = 0.06 + 0.05 * Math.sin(t * 0.9 + i * 1.7);
-        _col.setRGB(pulse * 0.8, pulse * 3.2, pulse * 1.4);
+        const p = 0.06 + 0.05 * Math.sin(t*0.9+i*1.7);
+        _col.setRGB(p*0.8, p*3.2, p*1.4);
         bgMesh.setColorAt(i, _col);
       }
       if (bgMesh.instanceColor) bgMesh.instanceColor.needsUpdate = true;
     }
     if (bgMtRef.current) bgMtRef.current.opacity = op * 0.18;
 
-    // Strand signals
+    // Strand lines nearly invisible; signal particles carry the light
     const build = strandBuildRef.current;
     if (build) {
       const { groups, nSamples, trail, sigPosBuf, sigNegBuf, sigPosAttr, sigNegAttr } = build;
       let posOff = 0, negOff = 0;
 
       groups.forEach((strands, gi) => {
-        // Strand lines nearly invisible — the light lives in the signal particles
         const mt = strandMatsRef.current[gi];
-        if (mt) mt.opacity = op * 0.04;
+        if (mt) mt.opacity = op * 0.04; // hairline — barely visible
 
         strands.forEach(strand => {
           strand.phase = (strand.phase + delta * strand.speed) % 1;
@@ -484,10 +646,10 @@ export default function NeuronInterior() {
             const lo  = Math.floor(idx);
             const hi  = Math.min(lo + 1, nSamples - 1);
             const fr  = idx - lo;
-            const b = lo * 3, c = hi * 3;
-            const px = strand.path[b]   + (strand.path[c]   - strand.path[b])   * fr;
-            const py = strand.path[b+1] + (strand.path[c+1] - strand.path[b+1]) * fr;
-            const pz = strand.path[b+2] + (strand.path[c+2] - strand.path[b+2]) * fr;
+            const b   = lo*3, c = hi*3;
+            const px  = strand.path[b]   + (strand.path[c]   - strand.path[b])   * fr;
+            const py  = strand.path[b+1] + (strand.path[c+1] - strand.path[b+1]) * fr;
+            const pz  = strand.path[b+2] + (strand.path[c+2] - strand.path[b+2]) * fr;
             if (strand.isPositive) {
               sigPosBuf[posOff++] = px; sigPosBuf[posOff++] = py; sigPosBuf[posOff++] = pz;
             } else {
@@ -497,7 +659,6 @@ export default function NeuronInterior() {
         });
       });
 
-      // Park unused slots far off-screen
       while (posOff < sigPosBuf.length) { sigPosBuf[posOff++] = 1e6; }
       while (negOff < sigNegBuf.length) { sigNegBuf[negOff++] = 1e6; }
       sigPosAttr.needsUpdate = true;
@@ -515,44 +676,58 @@ export default function NeuronInterior() {
     if (axonAttr.current)  axonAttr.current.needsUpdate = true;
     if (ptAxonRef.current) ptAxonRef.current.opacity = op * 0.95;
     if (axonMtRef.current) axonMtRef.current.opacity = op * 0.55;
-
     if (ptDustRef.current) ptDustRef.current.opacity = op * 0.10;
 
-    // HTML tier reveals: staggered by opacity threshold
-    const tierOp = (thresh: number) =>
-      Math.max(0, Math.min(1, (op - thresh) / 0.20));
-
+    // HTML tier reveals — staggered by opacity threshold
+    const tierOp = (thresh: number) => Math.max(0, Math.min(1, (op-thresh)/0.20));
     if (t1aRef.current)  t1aRef.current.style.opacity  = String(tierOp(0.08));
     if (t1bRef.current)  t1bRef.current.style.opacity  = String(tierOp(0.08));
     if (t2zRef.current)  t2zRef.current.style.opacity  = String(tierOp(0.28));
     if (t2aRef.current)  t2aRef.current.style.opacity  = String(tierOp(0.28));
     if (t3bRef.current)  t3bRef.current.style.opacity  = String(tierOp(0.44));
     inputRefs.current.forEach((el, i) => {
-      if (el) el.style.opacity = String(tierOp(0.46 + i * 0.07));
+      if (el) el.style.opacity = String(tierOp(0.46 + i*0.06));
     });
     if (t5Ref.current) t5Ref.current.style.opacity = String(tierOp(0.80));
 
+    // Live value updates (direct DOM mutation — no React re-render)
     if (zSpanRef.current)   zSpanRef.current.textContent   = z.toFixed(3);
     if (outSpanRef.current) outSpanRef.current.textContent = out.toFixed(3);
+    inputValRefs.current.forEach((el, i) => {
+      if (el) el.textContent = inputs[i].toFixed(2);
+    });
 
     if (dotRef.current) {
       const svgW = isMobile ? 68 : 90;
       const svgH = isMobile ? 38 : 46;
       const cz   = Math.max(-2, Math.min(2, z));
-      dotRef.current.setAttribute("cx", ((cz + 2) / 4 * svgW).toFixed(1));
+      dotRef.current.setAttribute("cx", ((cz+2)/4*svgW).toFixed(1));
       dotRef.current.setAttribute("cy",
         Math.max(1, Math.min(svgH-1, svgH/2 - gelu(cz)*svgH*0.35)).toFixed(1));
     }
   });
 
-  // ── JSX ───────────────────────────────────────────────────────────────────
+  // ── JSX ────────────────────────────────────────────────────────────────────
   const [wx, wy, wz] = TARGET_NEURON_POS;
   const d = <T,>(desktop: T, mobile: T): T => isMobile ? mobile : desktop;
+
+  // Compute label anchor positions from fan geometry (same as strand origins)
+  const labelAnchors = useMemo(() => {
+    const angleStep = n > 1 ? (FAN_A1 - FAN_A0) / (n - 1) : 0;
+    const D = Math.abs(inX) * 0.75;
+    return Array.from({ length: n }, (_, i) => {
+      const ang = FAN_A0 + angleStep * i;
+      return {
+        x: Math.cos(ang) * D,
+        y: -Math.sin(ang) * D,
+      };
+    });
+  }, [n, inX]);
 
   return (
     <group ref={groupRef} position={[wx, wy, wz]} visible={false}>
 
-      {/* BG layer: neighbour neurons far behind (rotates 0.4× = less parallax) */}
+      {/* BG layer: distant neighbour neurons */}
       <group ref={bgGroupRef}>
         <instancedMesh ref={bgMeshRef} args={[undefined, undefined, BG_POS.length]}>
           <sphereGeometry args={[0.06, 6, 4]} />
@@ -560,120 +735,142 @@ export default function NeuronInterior() {
         </instancedMesh>
       </group>
 
-      {/* MID layer: core + strands (imperative) + signals + axon + labels */}
+      {/* MID layer: core + strands + signals + labels */}
       <group ref={midGroupRef}>
 
-        {/* Layered BackSide shells: r=0.45/0.32/0.22 give volumetric rim glow */}
+        {/* Three BackSide shells give a volumetric rim-glow */}
         <mesh>
           <sphereGeometry args={[0.45, 14, 10]} />
-          <meshBasicMaterial ref={shell3MtRef} color={EM_HEX} transparent opacity={0} side={THREE.BackSide} depthWrite={false} toneMapped={false} />
+          <meshBasicMaterial ref={shell3MtRef} color={EM_HEX} transparent opacity={0}
+            side={THREE.BackSide} depthWrite={false} toneMapped={false} />
         </mesh>
         <mesh>
           <sphereGeometry args={[0.32, 16, 10]} />
-          <meshBasicMaterial ref={shell2MtRef} color={EM_HEX} transparent opacity={0} side={THREE.BackSide} depthWrite={false} toneMapped={false} />
+          <meshBasicMaterial ref={shell2MtRef} color={EM_HEX} transparent opacity={0}
+            side={THREE.BackSide} depthWrite={false} toneMapped={false} />
         </mesh>
         <mesh>
           <sphereGeometry args={[0.22, 16, 12]} />
-          <meshBasicMaterial ref={shell1MtRef} color={EM_HDR} transparent opacity={0} side={THREE.BackSide} depthWrite={false} toneMapped={false} />
+          <meshBasicMaterial ref={shell1MtRef} color={EM_HDR} transparent opacity={0}
+            side={THREE.BackSide} depthWrite={false} toneMapped={false} />
         </mesh>
 
-        {/* Nucleus: bright breathing core; non-uniform scale = organic wobble */}
+        {/* Nucleus: bright breathing core */}
         <mesh ref={nucleusMesh}>
           <sphereGeometry args={[0.12, 20, 14]} />
           <meshBasicMaterial ref={nucleusMtRef} color={EM_HDR} transparent opacity={0} toneMapped={false} />
         </mesh>
 
-        {/* Strand LineSegments are added imperatively in useEffect above */}
+        {/* Rim, arcs, motes, ripples — added imperatively in useEffect */}
 
         {/* Signal particles — emerald (positive weights) */}
         <points>
           <bufferGeometry ref={sigPosGeoRef} />
-          <pointsMaterial ref={sigPosMtRef} color={EM_HDR} size={d(0.040, 0.032)} sizeAttenuation transparent opacity={0} toneMapped={false} />
+          <pointsMaterial ref={sigPosMtRef} color={EM_HDR} size={d(0.040, 0.032)}
+            sizeAttenuation transparent opacity={0} toneMapped={false} />
         </points>
 
         {/* Signal particles — amber (negative weights) */}
         <points>
           <bufferGeometry ref={sigNegGeoRef} />
-          <pointsMaterial ref={sigNegMtRef} color={AMBER_HDR} size={d(0.040, 0.032)} sizeAttenuation transparent opacity={0} toneMapped={false} />
+          <pointsMaterial ref={sigNegMtRef} color={AMBER_HDR} size={d(0.040, 0.032)}
+            sizeAttenuation transparent opacity={0} toneMapped={false} />
         </points>
 
-        {/* Input labels — hang at fan entry point for each input */}
-        {Array.from({ length: n }).map((_, i) => {
+        {/* Input labels — single line: x₃  0.88   w +0.88
+            Position follows the fan geometry so labels stay attached to strands */}
+        {labelAnchors.map(({ x: lx, y: ly }, i) => {
           const w     = (weights as readonly number[])[i];
           const col   = w < 0 ? AMBER_HEX : EM_HEX;
-          const sub   = ["₁","₂","₃","₄","₅"][i] ?? String(i + 1);
+          const sub   = ["₁","₂","₃","₄","₅"][i] ?? String(i+1);
           const wSign = w > 0 ? "+" : "";
-          const ang   = FAN_A0 + ((n > 1 ? (FAN_A1 - FAN_A0) / (n - 1) : 0) * i);
-          const D     = Math.abs(inX) * 0.78;
-          const lx    = Math.cos(ang) * D;
-          const ly    = -Math.sin(ang) * D;
           return (
             <Html key={i} position={[lx, ly, 0]} center>
-              <div ref={el => { inputRefs.current[i] = el; }} style={{ opacity: 0, textAlign: "right" }}>
-                <div style={{ ...BD, fontFamily: TERM, fontSize: d(16, 13), color: CREAM2, lineHeight: 1.3, marginBottom: 3 }}>
-                  x{sub}
-                </div>
-                <div style={{ ...BD, fontFamily: TERM, fontSize: d(20, 15), color: col, lineHeight: 1.2 }}>
-                  w = {wSign}{w.toFixed(2)}
+              <div
+                ref={el => { inputRefs.current[i] = el; }}
+                style={{ opacity: 0 }}
+              >
+                <div style={{
+                  ...BD,
+                  fontFamily: TERM,
+                  fontSize:   d(15, 14),
+                  color:      CREAM2,
+                  lineHeight: 1.4,
+                  letterSpacing: "0.03em",
+                }}>
+                  {/* x subscript */}
+                  x{sub}&ensp;
+                  {/* live xᵢ value — updated by useFrame */}
+                  <span
+                    ref={el => { inputValRefs.current[i] = el; }}
+                    style={{ color: CREAM }}
+                  >0.50</span>
+                  &ensp;&thinsp;w{" "}
+                  {/* weight: emerald positive, amber negative */}
+                  <span style={{ color: col }}>{wSign}{w.toFixed(2)}</span>
                 </div>
               </div>
             </Html>
           );
         })}
 
-        {/* Axon tube: exits right and recedes (z → −0.80) */}
+        {/* Axon tube exits right and recedes */}
         <mesh>
           <tubeGeometry args={[axonCurve, 16, 0.022, 5, false]} />
           <meshBasicMaterial ref={axonMtRef} color={EM_HEX} transparent opacity={0} toneMapped={false} />
         </mesh>
-
-        {/* Axon signal particle */}
         <points geometry={axonPtGeo}>
-          <pointsMaterial ref={ptAxonRef} color={EM_HDR} size={d(0.062, 0.048)} sizeAttenuation transparent opacity={0} toneMapped={false} />
+          <pointsMaterial ref={ptAxonRef} color={EM_HDR} size={d(0.062, 0.048)}
+            sizeAttenuation transparent opacity={0} toneMapped={false} />
         </points>
 
-        {/* T1 — z equation above core */}
-        <Html position={[0, d(0.58, 0.95), 0]} center>
+        {/* ── HTML label zones ─────────────────────────────────────────────── */}
+
+        {/* TOP-ZONE: z = Σ(w·x) + b  (42px serif)
+            x=+0.50 desktop: all fan labels are at x≤-0.23 (right edge ≤716px);
+            equation left starts at ≈742px — zero pixel conflict */}
+        <Html position={[d(0.50, 0), d(1.10, 0.92), 0]} center>
           <div ref={t1aRef} style={{ opacity: 0, textAlign: "center" }}>
             <div style={{ ...BD, padding: "4px 12px" }}>
-              <span style={{ fontFamily: SERIF, fontSize: d(56, 30), color: CREAM, lineHeight: 1 }}>
+              <span style={{ fontFamily: SERIF, fontSize: d(42, 26), color: CREAM, lineHeight: 1 }}>
                 <em style={{ color: EM_HEX, fontStyle: "italic" }}>z</em>
-                <span style={{ fontStyle: "normal" }}>{" = Σ(w·x) + b"}</span>
+                {" = Σ(w·x) + b"}
               </span>
             </div>
           </div>
         </Html>
 
-        {/* T3 — bias value below core */}
-        <Html position={[0, d(0.24, 0.28), 0]} center>
+        {/* TOP-ZONE: live z value directly under equation  (28px Courier Prime 700) */}
+        <Html position={[d(0.50, 0), d(0.82, 0.64), 0]} center>
+          <div ref={t2zRef} style={{ opacity: 0 }}>
+            <div style={{ ...BD, padding: "3px 10px" }}>
+              <span style={{ fontFamily: TERM, fontSize: d(28, 18), fontWeight: 700, color: EM_HEX, lineHeight: 1 }}>
+                <em style={{ fontStyle: "italic" }}>z</em>{" = "}
+                <span ref={zSpanRef}>···</span>
+              </span>
+            </div>
+          </div>
+        </Html>
+
+        {/* CENTER: b chip just below core */}
+        <Html position={[d(0.22, 0.18), d(-0.34, -0.28), 0]} center>
           <div ref={t3bRef} style={{ opacity: 0 }}>
             <div style={{ ...BD }}>
-              <span style={{ fontFamily: TERM, fontSize: d(20, 15), color: CREAM2 }}>b = {BIAS}</span>
+              <span style={{ fontFamily: TERM, fontSize: d(14, 12), color: CREAM2 }}>b = {BIAS}</span>
             </div>
           </div>
         </Html>
 
-        {/* T2 — live z value below core */}
-        <Html position={[0, d(-0.52, -0.52), 0]} center>
-          <div ref={t2zRef} style={{ opacity: 0 }}>
-            <div style={{ ...BD, padding: "4px 10px" }}>
-              <span style={{ fontFamily: TERM, fontSize: d(32, 20), fontWeight: 700, color: EM_HEX, lineHeight: 1 }}>
-                <em style={{ fontStyle: "italic" }}>z</em>{" = "}<span ref={zSpanRef}>···</span>
-              </span>
-            </div>
-          </div>
-        </Html>
-
-        {/* GELU activation curve panel */}
-        <Html position={[d(0.52, 0.58), d(1.12, 0.85), 0]} center>
+        {/* RIGHT COLUMN: GELU activation panel */}
+        <Html position={[d(1.55, 0.30), d(0.52, 0.80), 0]} center>
           <GeluPanel dotRef={dotRef} isMobile={isMobile} />
         </Html>
 
-        {/* T1 — a = GELU(z) near axon start */}
-        <Html position={[d(OUTPUT_X, 0.28), d(0.40, 0.50), d(-0.28, -0.18)]} center>
+        {/* RIGHT COLUMN: a = GELU(z)  (42px serif) */}
+        <Html position={[d(1.55, 0.30), d(-0.08, 0.28), 0]} center>
           <div ref={t1bRef} style={{ opacity: 0, textAlign: "center" }}>
             <div style={{ ...BD, padding: "4px 12px" }}>
-              <span style={{ fontFamily: SERIF, fontSize: d(56, 30), color: CREAM, lineHeight: 1 }}>
+              <span style={{ fontFamily: SERIF, fontSize: d(42, 26), color: CREAM, lineHeight: 1 }}>
                 <em style={{ color: EM_HEX, fontStyle: "italic" }}>a</em>
                 {" = GELU("}
                 <em style={{ color: EM_HEX, fontStyle: "italic" }}>z</em>
@@ -683,25 +880,28 @@ export default function NeuronInterior() {
           </div>
         </Html>
 
-        {/* T2 — live a value + next layer label */}
-        <Html position={[d(OUTPUT_X, 0.28), d(-0.40, -0.72), d(-0.28, -0.18)]} center>
+        {/* RIGHT COLUMN: live a value + → NEXT LAYER  (28px Courier Prime 700) */}
+        <Html position={[d(1.55, 0.30), d(-0.42, -0.04), 0]} center>
           <div ref={t2aRef} style={{ opacity: 0, textAlign: "center" }}>
-            <div style={{ ...BD, padding: "4px 10px" }}>
-              <span style={{ fontFamily: TERM, fontSize: d(32, 20), fontWeight: 700, color: EM_HEX, lineHeight: 1, display: "block" }}>
-                <em style={{ fontStyle: "italic" }}>a</em>{" = "}<span ref={outSpanRef}>···</span>
+            <div style={{ ...BD, padding: "3px 10px" }}>
+              <span style={{ fontFamily: TERM, fontSize: d(28, 18), fontWeight: 700, color: EM_HEX, lineHeight: 1, display: "block" }}>
+                <em style={{ fontStyle: "italic" }}>a</em>{" = "}
+                <span ref={outSpanRef}>···</span>
               </span>
-              <span style={{ fontFamily: MONO, fontSize: d(12, 11), letterSpacing: "0.14em", textTransform: "uppercase" as const, color: CREAM3, display: "block", marginTop: 4 }}>
+              <span style={{ fontFamily: MONO, fontSize: d(11, 10), letterSpacing: "0.14em",
+                textTransform: "uppercase" as const, color: CREAM3, display: "block", marginTop: 4 }}>
                 → NEXT LAYER
               </span>
             </div>
           </div>
         </Html>
 
-        {/* T5 — caption */}
-        <Html position={[0, d(-1.48, -1.25), 0]} center>
+        {/* BOTTOM: caption  (11px mono) */}
+        <Html position={[0, d(-1.38, -1.10), 0]} center>
           <div ref={t5Ref} style={{ opacity: 0 }}>
             <div style={{ ...BD }}>
-              <span style={{ fontFamily: MONO, fontSize: d(12, 11), letterSpacing: "0.14em", textTransform: "uppercase" as const, color: CREAM3 }}>
+              <span style={{ fontFamily: MONO, fontSize: d(11, 10), letterSpacing: "0.14em",
+                textTransform: "uppercase" as const, color: CREAM3 }}>
                 INSIDE NEURON 2·07 — HIDDEN LAYER 2
               </span>
             </div>
@@ -709,17 +909,18 @@ export default function NeuronInterior() {
         </Html>
       </group>
 
-      {/* FG layer: foreground dust (rotates 1.8× = most parallax = closest) */}
+      {/* FG layer: foreground dust particles (rotate 1.8× — closest layer) */}
       <group ref={fgGroupRef}>
         <points geometry={dustGeo}>
-          <pointsMaterial ref={ptDustRef} color={CREAM_COL} size={d(0.022, 0.018)} sizeAttenuation transparent opacity={0} toneMapped={false} />
+          <pointsMaterial ref={ptDustRef} color={CREAM_COL} size={d(0.022, 0.018)}
+            sizeAttenuation transparent opacity={0} toneMapped={false} />
         </points>
       </group>
     </group>
   );
 }
 
-// ── GELU curve SVG panel ──────────────────────────────────────────────────────
+// ── GELU curve SVG panel ───────────────────────────────────────────────────────
 
 function GeluPanel({
   dotRef,
@@ -736,26 +937,31 @@ function GeluPanel({
     const y  = gelu(x);
     const px = (i / 59) * W;
     const py = H / 2 - y * H * 0.35;
-    return `${px.toFixed(1)},${Math.max(1, Math.min(H - 1, py)).toFixed(1)}`;
+    return `${px.toFixed(1)},${Math.max(1, Math.min(H-1, py)).toFixed(1)}`;
   }).join(" "),
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  [W, H]);
+  [W, H]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const axisLabel: React.CSSProperties = {
+  const axLabel: React.CSSProperties = {
     fontFamily: "var(--font-mono,monospace)", fontSize: isMobile ? 7 : 8,
     fill: "rgba(255,230,203,0.28)" as string, letterSpacing: "0.08em",
   };
 
   return (
-    <div style={{ background: "rgba(4,28,28,0.88)", backdropFilter: "blur(4px)", border: "1px solid rgba(255,230,203,0.12)", borderRadius: 4, padding: "5px 7px 4px", pointerEvents: "none" }}>
-      <div style={{ fontFamily: "var(--font-mono,monospace)", fontSize: isMobile ? 11 : 12, letterSpacing: "0.14em", textTransform: "uppercase" as const, color: "rgba(255,230,203,0.48)", marginBottom: 4, userSelect: "none" }}>
-        GELU
-      </div>
+    <div style={{
+      background: "rgba(4,28,28,0.88)", backdropFilter: "blur(4px)",
+      border: "1px solid rgba(255,230,203,0.12)", borderRadius: 4,
+      padding: "5px 7px 4px", pointerEvents: "none",
+    }}>
+      <div style={{
+        fontFamily: "var(--font-mono,monospace)", fontSize: isMobile ? 11 : 12,
+        letterSpacing: "0.14em", textTransform: "uppercase" as const,
+        color: "rgba(255,230,203,0.48)", marginBottom: 4, userSelect: "none",
+      }}>GELU</div>
       <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
         <line x1="0" y1={H/2} x2={W} y2={H/2} stroke="rgba(255,230,203,0.08)" strokeWidth="0.5" />
         <line x1={W/2} y1="0" x2={W/2} y2={H} stroke="rgba(255,230,203,0.08)" strokeWidth="0.5" />
-        <text x={W-2} y={H/2-3} textAnchor="end" style={axisLabel}>x</text>
-        <text x={W/2+3} y={9} style={axisLabel}>f(x)</text>
+        <text x={W-2} y={H/2-3} textAnchor="end" style={axLabel}>x</text>
+        <text x={W/2+3} y={9} style={axLabel}>f(x)</text>
         <polyline points={curvePoints} fill="none" stroke={EM_HEX} strokeWidth="1.5" strokeLinejoin="round" />
         <circle ref={dotRef} cx={W/2} cy={H/2} r="2.8" fill={EM_HEX} opacity="0.9" />
       </svg>
