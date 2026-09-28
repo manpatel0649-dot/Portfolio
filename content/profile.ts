@@ -7,7 +7,7 @@ export const profile = {
   email: "manpatel0649@gmail.com", // TODO: confirm public email
 
   socials: {
-    github: "https://github.com/manpanchotiya",    // TODO: verify handle
+    github: "https://github.com/manpatel0649-dot",
     linkedin: "https://linkedin.com/in/manpanchotiya", // TODO: verify handle
     huggingface: "https://huggingface.co/manpanchotiya", // TODO: verify handle
     kaggle: "https://kaggle.com/manpanchotiya",    // TODO: verify handle
