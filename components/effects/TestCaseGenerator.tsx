@@ -24,9 +24,8 @@ export default function TestCaseGenerator() {
             idx++;
             setVisibleCount(idx);
             setTimeout(run, 700);
-          } else {
-            setTimeout(() => { setVisibleCount(0); idx = 0; setTimeout(run, 400); }, 3200);
           }
+          // stop when all rows shown — no loop
         };
         run();
       },

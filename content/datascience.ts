@@ -54,3 +54,15 @@ export const dsSection = {
     { idx: "04", title: "Deploy",          description: "APIs, dashboards, Streamlit apps" },
   ],
 };
+
+export const confusionMatrix = {
+  title: "Churn model · confusion matrix",
+  cols: ["Pred. Churn", "Pred. Stay"],
+  rows: ["Actual Churn", "Actual Stay"],
+  cells: [
+    { label: "TP", value: "[TP]", intensity: 0.90, good: true  },
+    { label: "FP", value: "[FP]", intensity: 0.35, good: false },
+    { label: "FN", value: "[FN]", intensity: 0.25, good: false },
+    { label: "TN", value: "[TN]", intensity: 0.85, good: true  },
+  ],
+};
