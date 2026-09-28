@@ -9,6 +9,7 @@ import Stack from "@/components/sections/Stack";
 import About from "@/components/sections/About";
 import Writing from "@/components/sections/Writing";
 import Contact from "@/components/sections/Contact";
+import SectionAnimations from "@/components/effects/SectionAnimations";
 
 export default function Home() {
   return (
@@ -26,6 +27,7 @@ export default function Home() {
         <Contact />
       </main>
       <Footer />
+      <SectionAnimations />
     </>
   );
 }

@@ -408,6 +408,68 @@
   }
 }
 
+/* ── Scroll reveal utilities (driven by SectionAnimations.tsx) ── */
+
+/* Hairline under section-label: starts clipped, expands on .in-view */
+.section-label::after {
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path .55s var(--ease-expo) .2s;
+}
+.section-label.in-view::after {
+  clip-path: inset(0 0% 0 0);
+}
+
+/* Corner brackets: scale in from their respective corners after card lands */
+.corner::before {
+  transform-origin: top left;
+  transform: scale(0);
+  opacity: .7;
+  transition: transform .35s var(--ease-expo) .45s;
+}
+.corner::after {
+  transform-origin: bottom right;
+  transform: scale(0);
+  opacity: .7;
+  transition: transform .35s var(--ease-expo) .5s;
+}
+.corner.bk-in::before,
+.corner.bk-in::after {
+  transform: scale(1);
+}
+
+/* Importance bars: GSAP drives them on scroll; remove CSS auto-play */
+.importance-bar {
+  animation: none;
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+/* Timeline: fill line injected by SectionAnimations */
+.timeline { position: relative; overflow: visible; }
+.timeline-fill {
+  position: absolute;
+  left: -27px;
+  top: 0;
+  width: 1px;
+  background: linear-gradient(to bottom, var(--em), rgba(52,211,153,.25));
+  height: 0%;
+  pointer-events: none;
+  box-shadow: 0 0 8px rgba(52,211,153,.4);
+}
+/* Timeline dot: lights up on scroll */
+.timeline-item.lit::before {
+  background: var(--em);
+  box-shadow: 0 0 12px var(--em);
+  transition: background .3s, box-shadow .3s;
+}
+
+/* Prefers-reduced-motion: skip all custom animations */
+@media (prefers-reduced-motion: reduce) {
+  .section-label::after         { clip-path: inset(0 0% 0 0) !important; transition: none !important; }
+  .corner::before, .corner::after { transform: scale(1) !important; transition: none !important; }
+  .importance-bar               { transform: scaleX(1) !important; }
+}
+
 /* ── Mobile ── */
 @media (max-width: 900px) {
   .wrap { padding: 0 16px; }

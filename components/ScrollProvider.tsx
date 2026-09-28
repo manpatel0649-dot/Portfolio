@@ -65,10 +65,16 @@ export default function ScrollProvider({ children }: { children: React.ReactNode
       lenisRef.current?.lenis?.on("scroll", ScrollTrigger.update);
     }, 0);
 
+    // When GSAP adds/removes pin spacers, re-sync Lenis's scroll height so
+    // it doesn't cap out before the bottom of the page.
+    const onRefresh = () => lenisRef.current?.lenis?.resize();
+    ScrollTrigger.addEventListener("refresh", onRefresh);
+
     return () => {
       clearTimeout(tid);
       gsap.ticker.remove(update);
       lenisRef.current?.lenis?.off("scroll", ScrollTrigger.update);
+      ScrollTrigger.removeEventListener("refresh", onRefresh);
     };
   }, []);
 
@@ -154,7 +160,7 @@ export default function ScrollProvider({ children }: { children: React.ReactNode
   }, []);
 
   return (
-    <ReactLenis root options={{ autoRaf: false }} ref={lenisRef}>
+    <ReactLenis root options={{ autoRaf: false, naiveDimensions: true }} ref={lenisRef}>
       {children}
       {showDebug && <DebugOverlay />}
       <HUDPanel />

@@ -1,34 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { testCaseRequirement, testCaseRows } from "@/content/projects";
 
 export default function TestCaseGenerator() {
   const [visibleCount, setVisibleCount] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let idx = 0;
+    const el = containerRef.current;
+    if (!el) return;
+    let started = false;
 
-    const run = () => {
-      if (idx < testCaseRows.length) {
-        idx++;
-        setVisibleCount(idx);
-        setTimeout(run, 700);
-      } else {
-        // Reset after pause
-        setTimeout(() => {
-          setVisibleCount(0);
-          idx = 0;
-          setTimeout(run, 400);
-        }, 3200);
-      }
-    };
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting || started) return;
+        started = true;
+        observer.disconnect();
 
-    run();
+        let idx = 0;
+        const run = () => {
+          if (idx < testCaseRows.length) {
+            idx++;
+            setVisibleCount(idx);
+            setTimeout(run, 700);
+          } else {
+            setTimeout(() => { setVisibleCount(0); idx = 0; setTimeout(run, 400); }, 3200);
+          }
+        };
+        run();
+      },
+      { threshold: 0.25 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   return (
     <div
+      ref={containerRef}
       style={{
         margin: "0 28px 28px",
         border: "1px solid var(--line)",

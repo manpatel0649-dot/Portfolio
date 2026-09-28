@@ -42,8 +42,9 @@ export default function LossChart() {
           fill="url(#lossGrad)"
           points={`0,120 ${pointsStr} 400,120`}
         />
-        {/* Loss line */}
+        {/* Loss line — id used by SectionAnimations for scroll-scrub dashoffset */}
         <polyline
+          id="loss-line"
           fill="none"
           stroke="#34d399"
           strokeWidth="1.6"
