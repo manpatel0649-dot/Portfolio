@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { profile } from "@/content/profile";
 
 const navLinks = [
@@ -14,6 +14,7 @@ const navLinks = [
 export default function Navbar() {
   const [active, setActive] = useState("work");
   const [mobileOpen, setMobileOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // Scrollspy — track which section is in view
   useEffect(() => {
@@ -35,6 +36,54 @@ export default function Navbar() {
 
     return () => observers.forEach((o) => o.disconnect());
   }, []);
+
+  // Esc closes menu
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mobileOpen]);
+
+  // Focus trap inside mobile menu
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const menu = menuRef.current;
+    if (!menu) return;
+
+    // Move focus into the menu
+    const firstFocusable = menu.querySelector<HTMLElement>(
+      'a, button, [tabindex]:not([tabindex="-1"])'
+    );
+    firstFocusable?.focus();
+
+    const trap = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const focusable = Array.from(
+        menu.querySelectorAll<HTMLElement>(
+          'a, button, [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => !el.hasAttribute("disabled"));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", trap);
+    return () => document.removeEventListener("keydown", trap);
+  }, [mobileOpen]);
 
   const closeMenu = () => setMobileOpen(false);
 
@@ -139,6 +188,8 @@ export default function Navbar() {
               className="show-mobile"
               onClick={() => setMobileOpen(true)}
               aria-label="Open menu"
+              aria-expanded={mobileOpen}
+              aria-controls="mobile-menu"
               style={{
                 display: "none",
                 background: "none",
@@ -159,9 +210,17 @@ export default function Navbar() {
 
       {/* Mobile overlay menu */}
       {mobileOpen && (
-        <div className="mobile-menu">
+        <div
+          id="mobile-menu"
+          className="mobile-menu"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Navigation menu"
+          ref={menuRef}
+        >
           <button
             onClick={closeMenu}
+            aria-label="Close menu"
             style={{
               position: "absolute",
               top: 24,

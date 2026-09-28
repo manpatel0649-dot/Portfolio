@@ -4,8 +4,11 @@ import DynamicCanvas from "@/components/three/DynamicCanvas";
 export default function BackgroundLayers() {
   return (
     <>
-      {/* ── 3D Canvas — R3F, WebGL, client-only (ssr:false) ── */}
-      <DynamicCanvas />
+      {/* ── 3D Canvas — aria-hidden; decorative only ── */}
+      <p className="sr-only">Animated neural network background illustration</p>
+      <div aria-hidden="true" role="presentation">
+        <DynamicCanvas />
+      </div>
 
       {/* Glow A — large teal circle top-right */}
       <div

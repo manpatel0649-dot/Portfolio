@@ -39,16 +39,52 @@ const courierPrime = Courier_Prime({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://manpanchotiya.com"),
   title: "Man Panchotiya — AI/ML Engineer & Founder",
   description:
     "I build LLMs, AI agents & data-driven intelligent software. Founder of Qeist.io and Aoneq Labs.",
+  alternates: { canonical: "/" },
   openGraph: {
     title: "Man Panchotiya — AI/ML Engineer & Founder",
     description:
       "I build LLMs, AI agents & data-driven intelligent software. Founder of Qeist.io and Aoneq Labs.",
+    url: "https://manpanchotiya.com",
+    siteName: "Man Panchotiya",
     type: "website",
-    // TODO: add og:image once design is final
+    images: [
+      {
+        url: "/og-image",
+        width: 1200,
+        height: 630,
+        alt: "Man Panchotiya — AI/ML Engineer & Founder",
+      },
+    ],
   },
+  twitter: {
+    card: "summary_large_image",
+    title: "Man Panchotiya — AI/ML Engineer & Founder",
+    description:
+      "I build LLMs, AI agents & data-driven intelligent software. Founder of Qeist.io and Aoneq Labs.",
+    images: ["/og-image"],
+  },
+};
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Person",
+  name: "Man Panchotiya",
+  jobTitle: "AI/ML Engineer & Founder",
+  url: "https://manpanchotiya.com",
+  email: "manpatel0649@gmail.com",
+  sameAs: [
+    "https://github.com/manpanchotiya",
+    "https://linkedin.com/in/manpanchotiya",
+    "https://huggingface.co/manpanchotiya",
+  ],
+  worksFor: [
+    { "@type": "Organization", name: "Qeist.io" },
+    { "@type": "Organization", name: "Aoneq Labs" },
+  ],
 };
 
 const fontVars = [
@@ -62,6 +98,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={fontVars}>
       <body className="antialiased overflow-x-hidden">
+        {/* JSON-LD structured data */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+        {/* Skip navigation for keyboard users */}
+        <a href="#main-content" className="skip-link">
+          Skip to content
+        </a>
         {/* Fixed background: glows, grain, vignette, 3D canvas */}
         <BackgroundLayers />
         {/* Lenis smooth scroll + GSAP ScrollTrigger hero pin */}

@@ -83,8 +83,9 @@ export default function Contact() {
             ) : (
               <form onSubmit={handleSubmit} style={{ padding: "8px 0 24px" }}>
                 <div className="form-field" style={{ margin: "0 28px" }}>
-                  <b>name&gt;</b>
+                  <label htmlFor="f-name"><b>name&gt;</b></label>
                   <input
+                    id="f-name"
                     type="text"
                     required
                     value={name}
@@ -102,8 +103,9 @@ export default function Contact() {
                   />
                 </div>
                 <div className="form-field" style={{ margin: "0 28px" }}>
-                  <b>email&gt;</b>
+                  <label htmlFor="f-email"><b>email&gt;</b></label>
                   <input
+                    id="f-email"
                     type="email"
                     required
                     value={email}
@@ -129,8 +131,9 @@ export default function Contact() {
                     paddingBottom: 18,
                   }}
                 >
-                  <b style={{ paddingTop: 2 }}>msg&gt;</b>
+                  <label htmlFor="f-message" style={{ paddingTop: 2 }}><b>msg&gt;</b></label>
                   <textarea
+                    id="f-message"
                     required
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}

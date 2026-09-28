@@ -470,6 +470,55 @@
   .importance-bar               { transform: scaleX(1) !important; }
 }
 
+/* ── Accessibility ── */
+
+/* Skip-to-content: visually hidden until focused */
+.skip-link {
+  position: absolute;
+  top: -48px;
+  left: 8px;
+  z-index: 9999;
+  padding: 8px 16px;
+  background: var(--em);
+  color: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  border-radius: 4px;
+  transition: top .2s;
+}
+.skip-link:focus {
+  top: 8px;
+}
+
+/* Screen-reader only utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Visible focus ring for keyboard users */
+:focus-visible {
+  outline: 2px solid var(--em);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* Form inputs use a border highlight instead of the default ring */
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-bottom: 1px solid var(--em) !important;
+}
+
 /* ── Mobile ── */
 @media (max-width: 900px) {
   .wrap { padding: 0 16px; }

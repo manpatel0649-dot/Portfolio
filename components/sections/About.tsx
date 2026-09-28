@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { about } from "@/content/about";
 
 export default function About() {
@@ -50,16 +51,18 @@ export default function About() {
               }}
             >
               {about.photo ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={about.photo}
                   alt="Man Panchotiya"
+                  width={480}
+                  height={360}
                   style={{
                     width: "100%",
                     height: "100%",
                     objectFit: "cover",
                     display: "block",
                   }}
+                  priority={false}
                 />
               ) : (
                 <div

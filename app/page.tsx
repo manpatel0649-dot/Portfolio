@@ -16,7 +16,7 @@ export default function Home() {
     <>
       <StatusBar />
       <Navbar />
-      <main>
+      <main id="main-content" tabIndex={-1}>
         <Hero />
         <Work />
         <Capabilities />
