@@ -5,6 +5,7 @@ interface BtnProps {
   onClick?: () => void;
   type?: "button" | "submit";
   className?: string;
+  disabled?: boolean;
 }
 
 export default function Btn({
@@ -14,6 +15,7 @@ export default function Btn({
   onClick,
   type = "button",
   className = "",
+  disabled = false,
 }: BtnProps) {
   const cls = `btn btn-${variant} ${className}`;
   if (href) {
@@ -24,7 +26,7 @@ export default function Btn({
     );
   }
   return (
-    <button type={type} onClick={onClick} className={cls}>
+    <button type={type} onClick={onClick} className={cls} disabled={disabled} aria-disabled={disabled}>
       {children}
     </button>
   );
