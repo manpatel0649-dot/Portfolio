@@ -60,6 +60,13 @@ export default function TestCaseGenerator() {
 
       {/* Generated rows */}
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead className="sr-only">
+          <tr>
+            <th scope="col">ID</th>
+            <th scope="col">Description</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
         <tbody>
           {testCaseRows.map((row, i) => (
             <tr

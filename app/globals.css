@@ -63,7 +63,7 @@
   --bg3:     #07302c;
   --cream:   #ffe6cb;
   --cream-2: rgba(255,230,203,.66);
-  --cream-3: rgba(255,230,203,.42);
+  --cream-3: rgba(255,230,203,.55); /* bumped from .42 — WCAG AA 4.5:1 on #041c1c */
   --line:    rgba(255,230,203,.12);
   --line-2:  rgba(255,230,203,.22);
   --panel:   rgba(4,28,28,.72);
