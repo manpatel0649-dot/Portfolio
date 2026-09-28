@@ -9,6 +9,7 @@ import { Analytics } from "@vercel/analytics/react";
 import { Toaster } from "@/components/ui/sonner";
 import BackgroundLayers from "@/components/ui/BackgroundLayers";
 import ScrollProvider from "@/components/ScrollProvider";
+import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const geist = Geist({
@@ -39,7 +40,7 @@ const courierPrime = Courier_Prime({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://manpanchotiya.com"),
+  metadataBase: new URL(SITE_URL),
   title: "Man Panchotiya — AI/ML Engineer & Founder",
   description:
     "I build LLMs, AI agents & data-driven intelligent software. Founder of Qeist.io and Aoneq Labs.",
@@ -48,7 +49,7 @@ export const metadata: Metadata = {
     title: "Man Panchotiya — AI/ML Engineer & Founder",
     description:
       "I build LLMs, AI agents & data-driven intelligent software. Founder of Qeist.io and Aoneq Labs.",
-    url: "https://manpanchotiya.com",
+    url: SITE_URL,
     siteName: "Man Panchotiya",
     type: "website",
     images: [
@@ -74,7 +75,7 @@ const jsonLd = {
   "@type": "Person",
   name: "Man Panchotiya",
   jobTitle: "AI/ML Engineer & Founder",
-  url: "https://manpanchotiya.com",
+  url: SITE_URL,
   email: "manpatel0649@gmail.com",
   sameAs: [
     "https://github.com/manpatel0649-dot",
