@@ -13,6 +13,8 @@ interface EffectsProps {
 }
 
 export default function Effects({ isMobile }: EffectsProps) {
+  // Skip the entire postprocessing pass on mobile — saves one render target + compositor cost
+  if (isMobile) return null;
   return (
     <EffectComposer multisampling={0}>
       <Bloom

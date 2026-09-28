@@ -47,10 +47,10 @@ export default function CanvasRoot() {
     >
       <Canvas
         frameloop={paused ? "never" : "always"}
-        dpr={[1, 1.5]}
+        dpr={isMobile ? [1, 1.25] : [1, 1.5]}
         gl={{
           alpha:           true,
-          antialias:       true,
+          antialias:       !isMobile, // skip MSAA on mobile to save GPU cost
           powerPreference: "high-performance",
         }}
         // CameraRig overrides this position each frame; these are the defaults
